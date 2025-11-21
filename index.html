@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Maître du Jeu — Loup-Garou</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Maître du Jeu</h1>
+    <p class="subtitle">Loup‑Garou — affichage mobile</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <form id="addPlayerForm">
+        <input id="playerName" type="text" placeholder="Ajouter un joueur (prénom)" autocomplete="off" aria-label="Prénom du joueur" />
+        <button type="submit" id="addBtn">Ajouter</button>
+      </form>
+
+      <div class="actions">
+        <button id="shuffleBtn" class="primary">Distribuer rôles</button>
+        <button id="exportBtn">Exporter (JSON)</button>
+      </div>
+
+      <!-- Liste draggable des joueurs pour réordonnancer / insérer entre joueurs -->
+      <ul id="playerList" class="player-list" aria-label="Liste des joueurs"></ul>
+    </section>
+
+    <section class="circle-wrap">
+      <div class="circle-area">
+        <svg id="circleSvg"></svg>
+        <div id="playersContainer" class="players"></div>
+      </div>
+    </section>
+
+    <div id="roleModal" class="modal hidden">
+      <div class="modal-card">
+        <div id="roleText">Rôle</div>
+        <button id="nextReveal">Suivant</button>
+        <button id="closeModal">Fermer</button>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
