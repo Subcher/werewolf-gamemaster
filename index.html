@@ -26,6 +26,22 @@
 
       <!-- Liste draggable des joueurs pour réordonnancer / insérer entre joueurs -->
       <ul id="playerList" class="player-list" aria-label="Liste des joueurs"></ul>
+
+      <!-- Game controls -->
+      <div id="gameControls" class="game-controls">
+        <div><strong>Phase:</strong> <span id="currentPhase">Idle</span></div>
+        <div><strong>Acteur:</strong> <span id="currentActor">-</span></div>
+        <div id="actionArea"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="startGameBtn">Démarrer partie</button>
+          <button id="nextActionBtn">Action suivante</button>
+          <button id="resetGameBtn">Réinitialiser</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="startDayBtn">Démarrer Jour</button>
+        </div>
+        <div id="lynchArea" style="margin-top:8px"></div>
+      </div>
     </section>
 
     <section class="circle-wrap">
