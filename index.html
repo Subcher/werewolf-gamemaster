@@ -8,26 +8,50 @@
 </head>
 <body>
   <header>
+    <button id="burger" class="burger" aria-label="Ouvrir le menu">☰</button>
     <h1>Maître du Jeu</h1>
     <p class="subtitle">Loup‑Garou — affichage mobile</p>
   </header>
 
-  <main>
-    <section class="controls">
-      <form id="addPlayerForm">
-        <input id="playerName" type="text" placeholder="Ajouter un joueur (prénom)" autocomplete="off" aria-label="Prénom du joueur" />
-        <button type="submit" id="addBtn">Ajouter</button>
-      </form>
+  <!-- sidebar / drawer -->
+  <aside id="sidebar" class="sidebar hidden">
+    <nav>
+      <ul>
+        <li><a href="#" data-page="playersPage">Joueurs</a></li>
+        <li><a href="#" data-page="gamePage">Partie</a></li>
+        <li><a href="#" data-page="rolesPage">Rôles</a></li>
+        <li><a href="#" data-page="settingsPage">Paramètres</a></li>
+      </ul>
+    </nav>
+  </aside>
 
-      <div class="actions">
-        <button id="shuffleBtn" class="primary">Distribuer rôles</button>
-        <button id="exportBtn">Exporter (JSON)</button>
+  <main id="mainContent">
+    <!-- Players page -->
+    <section id="playersPage" class="page">
+      <div class="controls">
+        <form id="addPlayerForm">
+          <input id="playerName" type="text" placeholder="Ajouter un joueur (prénom)" autocomplete="off" aria-label="Prénom du joueur" />
+          <button type="submit" id="addBtn">Ajouter</button>
+        </form>
+
+        <div class="actions">
+          <button id="shuffleBtn" class="primary">Distribuer rôles</button>
+          <button id="exportBtn">Exporter (JSON)</button>
+        </div>
+
+        <ul id="playerList" class="player-list" aria-label="Liste des joueurs"></ul>
+      </div>
+    </section>
+
+    <!-- Game page -->
+    <section id="gamePage" class="page hidden">
+      <div class="circle-wrap">
+        <div class="circle-area">
+          <svg id="circleSvg"></svg>
+          <div id="playersContainer" class="players"></div>
+        </div>
       </div>
 
-      <!-- Liste draggable des joueurs pour réordonnancer / insérer entre joueurs -->
-      <ul id="playerList" class="player-list" aria-label="Liste des joueurs"></ul>
-
-      <!-- Game controls -->
       <div id="gameControls" class="game-controls">
         <div><strong>Phase:</strong> <span id="currentPhase">Idle</span></div>
         <div><strong>Acteur:</strong> <span id="currentActor">-</span></div>
@@ -44,24 +68,34 @@
       </div>
     </section>
 
-    <section class="circle-wrap">
-      <div class="circle-area">
-        <svg id="circleSvg"></svg>
-        <div id="playersContainer" class="players"></div>
+    <!-- Roles page (placeholder) -->
+    <section id="rolesPage" class="page hidden">
+      <div style="padding:12px">
+        <h2>Édition des rôles</h2>
+        <p>Ajouter / éditer la liste des rôles ici (implémentation future).</p>
       </div>
     </section>
 
-    <div id="roleModal" class="modal hidden">
-      <div class="modal-card">
-        <div id="roleText">Rôle</div>
-        <button id="nextReveal">Suivant</button>
-        <button id="closeModal">Fermer</button>
+    <!-- Settings page (placeholder) -->
+    <section id="settingsPage" class="page hidden">
+      <div style="padding:12px">
+        <h2>Paramètres</h2>
+        <p>Options de la partie, sauvegarde, etc.</p>
       </div>
-    </div>
+    </section>
 
   </main>
 
+  <div id="roleModal" class="modal hidden">
+    <div class="modal-card">
+      <div id="roleText">Rôle</div>
+      <button id="nextReveal">Suivant</button>
+      <button id="closeModal">Fermer</button>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="nav.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
