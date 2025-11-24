@@ -7,8 +7,6 @@ const el = {
   nameInput: document.getElementById('playerName'),
   addBtn: document.getElementById('addBtn'),
   playersContainer: document.getElementById('playersContainer'),
-  shuffleBtn: document.getElementById('shuffleBtn'),
-  exportBtn: document.getElementById('exportBtn'),
   roleModal: document.getElementById('roleModal'),
   roleText: document.getElementById('roleText'),
   nextReveal: document.getElementById('nextReveal'),
@@ -39,30 +37,54 @@ function removePlayer(id){
 }
 
 function renderPlayers(){
-  const container = el.playersContainer;
+  // Render players as a circular list (ul/li) using CSS transforms (inspired by provided snippet)
+  const container = document.getElementById('playersContainer');
+  if(!container) return;
   container.innerHTML = '';
   const n = players.length;
   if(n===0) return;
-  const rect = container.getBoundingClientRect();
-  // if rect width/height are zero (initial render), try to use parent size
-  const px = container.parentElement.getBoundingClientRect();
-  const cx = (rect.width||px.width)/2;
-  const cy = (rect.height||px.height)/2;
-  const radius = Math.min(cx,cy) - 40;
-  players.forEach((p,i)=>{
-    const angle = (i / n) * Math.PI * 2 - Math.PI/2;
-    const x = cx + radius * Math.cos(angle);
-    const y = cy + radius * Math.sin(angle);
-    const div = document.createElement('div');
-    div.className = 'player';
-    div.style.left = `${x}px`;
-    div.style.top = `${y}px`;
-    div.innerHTML = `<div class="chip"><div class="name">${escapeHtml(p.name)}</div><div class="index">#${i+1}</div></div>`;
-    div.addEventListener('click', ()=>{
-      if(confirm(`Supprimer ${p.name} ?`)) removePlayer(p.id);
-    });
-    container.appendChild(div);
+
+  // Determine available size from the .circle-area
+  const area = container.closest('.circle-area') || container;
+  const rect = area.getBoundingClientRect();
+  const width = rect.width || 300;
+  const height = rect.height || 300;
+
+  // radius in px (leave some padding)
+  const radius = Math.max(40, Math.min(width, height) / 2 - 60);
+
+  // create ul
+  const ul = document.createElement('ul');
+  ul.className = 'circle-list';
+
+  // center element (first li)
+  const centerLi = document.createElement('li');
+  centerLi.className = 'center-item';
+  centerLi.innerHTML = `<div class="chip center-chip"><div class="name">Centre</div></div>`;
+  ul.appendChild(centerLi);
+
+  // circle placement params
+  const type = 1; // full circle
+  const start = -90; // start at top
+  const numberOfElements = (type === 1) ? players.length : players.length - 1;
+  const slice = 360 * type / numberOfElements;
+
+  players.forEach((p, i) => {
+    const li = document.createElement('li');
+    li.className = 'circle-item';
+    li.innerHTML = `<div class="chip"><div class="name">${escapeHtml(p.name)}</div><div class="index">#${i+1}</div></div>`;
+    // compute transforms
+    const rotate = slice * i + start;
+    const rotateReverse = -rotate;
+    li.style.transform = `rotate(${rotate}deg) translate(${radius}px) rotate(${rotateReverse}deg)`;
+    // center origin
+    li.style.transformOrigin = '0 0';
+    // make clickable to remove
+    li.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(confirm(`Supprimer ${p.name} ?`)) { removePlayer(p.id); } });
+    ul.appendChild(li);
   });
+
+  container.appendChild(ul);
 }
 
 // --- Player list (draggable) ---
@@ -109,16 +131,7 @@ function shuffleArray(a){
   }
 }
 
-el.shuffleBtn.addEventListener('click', ()=>{
-  if(players.length===0){alert('Ajoutez des joueurs avant de distribuer.');return}
-  // use placeholder roles if none provided
-  const usedRoles = roles.length>=players.length ? roles.slice() : Array.from({length:players.length},(_,i)=>`Rôle ${i+1}`);
-  shuffleArray(usedRoles);
-  // reveal roles one by one
-  revealQueue = players.map((p,i)=>({player:p,role:usedRoles[i]}));
-  revealIndex = 0;
-  showNextReveal();
-});
+// removed direct el.shuffleBtn listener — the shuffle/export buttons live removed from players page
 
 let revealQueue = [];
 let revealIndex = 0;
@@ -144,14 +157,6 @@ el.closeModal.addEventListener('click', ()=>{
 
 function showModal(){el.roleModal.classList.remove('hidden')}
 function hideModal(){el.roleModal.classList.add('hidden')}
-
-el.exportBtn.addEventListener('click', ()=>{
-  const out = players.map((p,i)=>({id:p.id, name:p.name, index:i+1}));
-  const blob = new Blob([JSON.stringify(out, null, 2)],{type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'players.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-});
 
 // --- Game engine: phases, action queue, resolution ---
 const game = {
@@ -479,3 +484,28 @@ window.addEventListener('resize', ()=>{renderPlayers()});
 
 // small utility: wait until container has size before initial render
 setTimeout(()=>renderPlayers(),150);
+
+// Ensure listeners are attached after DOM is ready — rebind critical controls if needed
+document.addEventListener('DOMContentLoaded', ()=>{
+  // game controls
+  const sStart = document.getElementById('startGameBtn'); if(sStart){ sStart.removeEventListener && sStart.removeEventListener('click', startGame); sStart.addEventListener('click', startGame); }
+  const sNext = document.getElementById('nextActionBtn'); if(sNext){ sNext.removeEventListener && sNext.removeEventListener('click', nextAction); sNext.addEventListener('click', nextAction); }
+  const sReset = document.getElementById('resetGameBtn'); if(sReset){ sReset.removeEventListener && sReset.removeEventListener('click', resetGame); sReset.addEventListener('click', ()=>{ if(confirm('Réinitialiser la partie ?')) resetGame(); }); }
+  const sStartDay = document.getElementById('startDayBtn'); if(sStartDay){ sStartDay.removeEventListener && sStartDay.removeEventListener('click', startDay); sStartDay.addEventListener('click', startDay); }
+
+  // players controls
+});
+
+// react to page changes (nav.js dispatches pageChanged)
+document.addEventListener('pageChanged', (e)=>{
+  const page = e.detail;
+  if(page==='gamePage'){
+    // ensure players are rendered and controls bound
+    renderPlayers();
+    // rebind game controls
+    const sStart = document.getElementById('startGameBtn'); if(sStart){ sStart.removeEventListener && sStart.removeEventListener('click', startGame); sStart.addEventListener('click', startGame); }
+    const sNext = document.getElementById('nextActionBtn'); if(sNext){ sNext.removeEventListener && sNext.removeEventListener('click', nextAction); sNext.addEventListener('click', nextAction); }
+    const sReset = document.getElementById('resetGameBtn'); if(sReset){ sReset.removeEventListener && sReset.removeEventListener('click', resetGame); sReset.addEventListener('click', ()=>{ if(confirm('Réinitialiser la partie ?')) resetGame(); }); }
+    const sStartDay = document.getElementById('startDayBtn'); if(sStartDay){ sStartDay.removeEventListener && sStartDay.removeEventListener('click', startDay); sStartDay.addEventListener('click', startDay); }
+  }
+});
