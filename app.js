@@ -51,16 +51,21 @@ function renderPlayers(){
   const height = rect.height || 300;
 
   // radius in px (leave some padding)
-  const radius = Math.max(40, Math.min(width, height) / 2 - 60);
+  // ensure radius is based on the smaller dimension and leaves room for center
+  const radius = Math.max(40, Math.min(width, height) / 2 - 70);
 
   // create ul
   const ul = document.createElement('ul');
   ul.className = 'circle-list';
+  // ensure ul explicit size matches area so left:50% top:50% calc is consistent
+  ul.style.width = width + 'px';
+  ul.style.height = height + 'px';
 
   // center element (first li)
   const centerLi = document.createElement('li');
   centerLi.className = 'center-item';
   centerLi.innerHTML = `<div class="chip center-chip"><div class="name">Centre</div></div>`;
+  // centerLi positioned by CSS (.center-item) so no transform needed
   ul.appendChild(centerLi);
 
   // circle placement params
@@ -73,12 +78,22 @@ function renderPlayers(){
     const li = document.createElement('li');
     li.className = 'circle-item';
     li.innerHTML = `<div class="chip"><div class="name">${escapeHtml(p.name)}</div><div class="index">#${i+1}</div></div>`;
-    // compute transforms
-    const rotate = slice * i + start;
-    const rotateReverse = -rotate;
-    li.style.transform = `rotate(${rotate}deg) translate(${radius}px) rotate(${rotateReverse}deg)`;
-    // center origin
-    li.style.transformOrigin = '0 0';
+    // compute angle in radians and position relative to center of UL
+    const angleDeg = slice * i + start;
+    const angleRad = angleDeg * Math.PI / 180;
+    const cx = width / 2;
+    const cy = height / 2;
+    const x = cx + Math.cos(angleRad) * radius;
+    const y = cy + Math.sin(angleRad) * radius;
+    // place the item so its center is at (x,y). We'll use translate to move it from UL center (50%,50%)
+    // but since li has left:50% top:50% in CSS, compute offset from center
+    const offsetX = x - cx;
+    const offsetY = y - cy;
+    // apply transform: translate(offsetX, offsetY)
+    li.style.left = '50%';
+    li.style.top = '50%';
+    li.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    li.style.transformOrigin = 'center center';
     // make clickable to remove
     li.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(confirm(`Supprimer ${p.name} ?`)) { removePlayer(p.id); } });
     ul.appendChild(li);
