@@ -1,29 +1,14 @@
-# Node modules
+# Node
 node_modules/
 
 # Logs
 npm-debug.log*
-*.log
 
-# Runtime env
-.env
-.env.local
-
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
-# Editor directories
+# Editor
 .vscode/
-.idea/
-
-# Build output
-dist/
-build/
-
-# Coverage
-coverage/
-
-# Temporary
-*.tmp
+*.sublime-workspace
 

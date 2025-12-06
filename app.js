@@ -37,69 +37,54 @@ function removePlayer(id){
 }
 
 function renderPlayers(){
-  // Render players as a circular list (ul/li) using CSS transforms (inspired by provided snippet)
-  const container = document.getElementById('playersContainer');
+  // Render players as a circular list (ul/li) using CSS transforms
+  const container = document.getElementById('playerCircle');
   if(!container) return;
   container.innerHTML = '';
   const n = players.length;
   if(n===0) return;
 
-  // Determine available size from the .circle-area
-  const area = container.closest('.circle-area') || container;
+  // ensure container behaves like a positioned square to compute radius
+  // look for a parent that can provide dimensions (.circle-area or .circle-wrap)
+  const area = container.closest('.circle-area') || container.closest('.circle-wrap') || container;
   const rect = area.getBoundingClientRect();
-  const width = rect.width || 300;
-  const height = rect.height || 300;
+  const size = Math.min(rect.width || 300, rect.height || 300);
+  const radius = Math.max(40, Math.floor(size / 2) - 40); // px
 
-  // radius in px (leave some padding)
-  // ensure radius is based on the smaller dimension and leaves room for center
-  const radius = Math.max(40, Math.min(width, height) / 2 - 70);
-
-  // create ul
-  const ul = document.createElement('ul');
-  ul.className = 'circle-list';
-  // ensure ul explicit size matches area so left:50% top:50% calc is consistent
-  ul.style.width = width + 'px';
-  ul.style.height = height + 'px';
-
-  // center element (first li)
-  const centerLi = document.createElement('li');
-  centerLi.className = 'center-item';
-  centerLi.innerHTML = `<div class="chip center-chip"><div class="name">Centre</div></div>`;
-  // centerLi positioned by CSS (.center-item) so no transform needed
-  ul.appendChild(centerLi);
-
-  // circle placement params
-  const type = 1; // full circle
-  const start = -90; // start at top
-  const numberOfElements = (type === 1) ? players.length : players.length - 1;
-  const slice = 360 * type / numberOfElements;
-
-  players.forEach((p, i) => {
+  // create center + items directly inside the provided #playerCircle (container is the ul)
+  // first player becomes the center item (if exists)
+  players.forEach((p, idx) => {
     const li = document.createElement('li');
-    li.className = 'circle-item';
-    li.innerHTML = `<div class="chip"><div class="name">${escapeHtml(p.name)}</div><div class="index">#${i+1}</div></div>`;
-    // compute angle in radians and position relative to center of UL
-    const angleDeg = slice * i + start;
-    const angleRad = angleDeg * Math.PI / 180;
-    const cx = width / 2;
-    const cy = height / 2;
-    const x = cx + Math.cos(angleRad) * radius;
-    const y = cy + Math.sin(angleRad) * radius;
-    // place the item so its center is at (x,y). We'll use translate to move it from UL center (50%,50%)
-    // but since li has left:50% top:50% in CSS, compute offset from center
-    const offsetX = x - cx;
-    const offsetY = y - cy;
-    // apply transform: translate(offsetX, offsetY)
-    li.style.left = '50%';
-    li.style.top = '50%';
-    li.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
-    li.style.transformOrigin = 'center center';
-    // make clickable to remove
-    li.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(confirm(`Supprimer ${p.name} ?`)) { removePlayer(p.id); } });
-    ul.appendChild(li);
+    li.dataset.id = p.id;
+    if(idx === 0){
+      li.className = 'center-item';
+      li.innerHTML = `<div class="chip center-chip"><div class="name">${escapeHtml(p.name)}</div></div>`;
+      // center positioned via css (left:50% top:50% translate(-50%,-50%))
+    } else {
+      li.className = 'circle-item player';
+      li.innerHTML = `<div class="chip"><div class="name">${escapeHtml(p.name)}</div></div>`;
+      // initial positioning at center; we'll transform them around the circle next
+    }
+    container.appendChild(li);
   });
 
-  container.appendChild(ul);
+  // now compute transforms only for non-center items inside this container
+  const elements = container.querySelectorAll('li:not(.center-item)');
+  const type = 1; // full circle
+  const numberOfElements = (type === 1) ? elements.length : elements.length - 1;
+  // guard against division by zero
+  const slice = numberOfElements > 0 ? (360 * type) / numberOfElements : 360;
+  const start = -90; // start at top
+
+  elements.forEach((elItem, i) => {
+    const rotate = slice * i + start;
+    const rotateReverse = -rotate;
+    // use px radius computed from container size
+    // include translate(-50%,-50%) so the element remains centered before rotation/translation
+    elItem.style.transform = `translate(-50%,-50%) rotate(${rotate}deg) translate(${radius}px) rotate(${rotateReverse}deg)`;
+    // ensure transform-origin is center so rotation/translation look right
+    elItem.style.transformOrigin = 'center center';
+  });
 }
 
 // --- Player list (draggable) ---
@@ -524,3 +509,59 @@ document.addEventListener('pageChanged', (e)=>{
     const sStartDay = document.getElementById('startDayBtn'); if(sStartDay){ sStartDay.removeEventListener && sStartDay.removeEventListener('click', startDay); sStartDay.addEventListener('click', startDay); }
   }
 });
+
+// helper utilities and missing functions (added to avoid runtime errors)
+function getNameById(id){
+  const p = players.find(x=>x.id===id); return p? p.name : 'Inconnu';
+}
+
+function updateGameUI(){
+  if(elGame.currentPhase) elGame.currentPhase.textContent = (game.phase || 'idle');
+  // current actor: show role of current action or -
+  const current = game.actionsQueue && game.actionsQueue[game.currentActionIndex];
+  if(elGame.currentActor) elGame.currentActor.textContent = current ? (current.role || '-') : '-';
+  // enable/disable buttons simply
+  if(elGame.startBtn) elGame.startBtn.disabled = game.running;
+  if(elGame.nextBtn) elGame.nextBtn.disabled = !(game.actionsQueue && game.actionsQueue.length>0);
+}
+
+function startGame(){
+  if(players.length===0){ alert('Ajoutez des joueurs avant de démarrer la partie.'); return }
+  assignRolesToPlayers();
+  game.running = true;
+  game.night = 1;
+  game.phase = 'night';
+  game.actionsQueue = buildActionQueueForNight(game.night);
+  game.currentActionIndex = 0;
+  game.pendingActions = [];
+  renderPlayers();
+  renderPlayerList();
+  renderActionArea();
+  updateGameUI();
+}
+
+function nextAction(){
+  // move to next action slot; when finished, resolve night
+  if(!game.actionsQueue || game.actionsQueue.length===0){ resolveNight(); return }
+  // advance index
+  game.currentActionIndex++;
+  if(game.currentActionIndex >= game.actionsQueue.length){
+    // all actions processed: resolve night
+    resolveNight();
+  } else {
+    renderActionArea();
+    updateGameUI();
+  }
+}
+
+function resetGame(){
+  // clear roles and states but keep players list
+  players.forEach(p=>{ delete p.role; p.alive = true; p.protected = false; p.infected = false; p.transformed = false; p.couple = false; p.coupleWith = null; p.potions = {life:true,death:true}; });
+  game.running = false;
+  game.night = 0;
+  game.phase = 'idle';
+  game.actionsQueue = [];
+  game.currentActionIndex = 0;
+  game.pendingActions = [];
+  renderPlayerList(); renderPlayers(); updateGameUI();
+}
