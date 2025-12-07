@@ -66,11 +66,30 @@
       </div>
     </section>
 
-    <!-- Roles page (placeholder) -->
+    <!-- Roles page -->
     <section id="rolesPage" class="page hidden">
-      <div style="padding:12px">
-        <h2>Édition des rôles</h2>
-        <p>Ajouter / éditer la liste des rôles ici (implémentation future).</p>
+      <div class="roles-panel" style="padding:12px">
+        <div class="roles-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <h2 style="margin:0">Édition des rôles</h2>
+            <div class="roles-subtitle" style="font-size:13px;color:var(--muted)">Sélectionnez le nombre de chaque rôle</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:14px;color:var(--muted);margin-bottom:6px">Filtrer par camp</div>
+            <select id="rolesCampFilter" style="padding:6px;border-radius:8px;background:var(--card);color:var(--text);border:1px solid rgba(255,255,255,0.04)">
+              <option value="All">Tous les camps</option>
+              <option value="Village">Village</option>
+              <option value="Loup">Loup-Garou</option>
+              <option value="Solitaire">Solitaire</option>
+            </select>
+            <div style="font-size:14px;color:var(--muted);margin-top:8px">Rôles sélectionnés</div>
+            <div id="rolesTotal" style="font-weight:700">0 / 0</div>
+          </div>
+        </div>
+
+        <div id="rolesListContainer">
+          <ul id="rolesList" class="roles-list" aria-label="Liste des rôles"></ul>
+        </div>
       </div>
     </section>
 

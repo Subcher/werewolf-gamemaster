@@ -47,6 +47,9 @@ section.page .circle-wrap{position:static;inset:auto;display:flex;align-items:ce
 .player-list li.dragging{opacity:0.5}
 .player-list .handle{font-size:12px;color:var(--muted);margin-left:8px}
 
+/* small layout tweak so label and tag align nicely */
+.player-list li .label{flex:1}
+
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)}
 .modal.hidden{display:none}
 .modal-card{background:var(--card);padding:18px;border-radius:12px;min-width:260px;text-align:center}
@@ -78,3 +81,34 @@ section.page .circle-wrap{position:static;inset:auto;display:flex;align-items:ce
 /* Backdrop for sidebar to close when clicking outside */
 .sidebar-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:40}
 .sidebar-backdrop.hidden{display:none}
+
+/* Roles list styles */
+.roles-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.roles-list li{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)}
+.roles-list .role-avatar{width:56px;height:56px;border-radius:8px;flex:0 0 56px;object-fit:cover;background:#061523;border:1px solid rgba(255,255,255,0.03)}
+.roles-list .role-meta{flex:1;display:flex;flex-direction:column}
+.roles-list .role-name{font-weight:700}
+.roles-list .role-desc{font-size:12px;color:var(--muted)}
+.roles-list .role-controls{display:flex;align-items:center;gap:6px}
+.roles-list .role-controls button{width:34px;height:34px;border-radius:8px;border:none;background:rgba(255,255,255,0.04);color:var(--text);font-weight:700}
+.roles-list .role-count{min-width:34px;text-align:center}
+
+/* Switch control styling for role toggles */
+.switch{display:inline-block;position:relative;width:44px;height:24px}
+.switch input{opacity:0;width:0;height:0;position:absolute}
+.switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.04);transition:background .18s ease,border-color .18s ease;border-radius:999px;border:1px solid rgba(255,255,255,0.03)}
+.switch .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:50%;transform:translateY(-50%);background:linear-gradient(180deg,#ffffff,#e6eef8);border-radius:50%;transition:transform .18s ease,background .18s ease;box-shadow:0 2px 4px rgba(2,6,23,0.35)}
+.switch input:checked + .slider{background:var(--accent);border-color:var(--accent)}
+.switch input:checked + .slider:before{transform:translateY(-50%) translateX(20px)}
+
+/* Visual cue for selected role */
+.role-item.role-selected{box-shadow:inset 0 0 0 2px rgba(255,107,107,0.08);border-color:rgba(255,107,107,0.06)}
+
+/* Slight layout tweak to ensure controls align right */
+.role-item .role-controls{flex:0 0 64px;display:flex;justify-content:flex-end}
+
+/* ensure the switch is accessible on small screens */
+@media (max-width:420px){
+  .switch{width:40px;height:22px}
+  .switch .slider:before{height:16px;width:16px;left:3px}
+}
