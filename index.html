@@ -51,16 +51,14 @@
       </div>
 
       <div id="gameControls" class="game-controls">
-        <div><strong>Phase:</strong> <span id="currentPhase">Idle</span></div>
-        <div><strong>Acteur:</strong> <span id="currentActor">-</span></div>
-        <div id="actionArea"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="startGameBtn">Démarrer partie</button>
-          <button id="nextActionBtn">Action suivante</button>
-          <button id="resetGameBtn">Réinitialiser</button>
+        <div style="text-align:center">
+          <button id="distributeRolesBtn" class="btn">Distribution des rôles</button>
+          <div id="distributeHint" style="margin-top:8px;color:var(--muted);font-size:13px">Cliquez pour distribuer les rôles aux joueurs (aléatoire).</div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="startDayBtn">Démarrer Jour</button>
+        <div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div><strong>Action en cours:</strong> <span id="currentAction">Aucune</span></div>
+          <div><strong>Calendrier:</strong> <span id="calendar">—</span></div>
+          <button id="nextActionBtn" class="btn" style="display:none;">Prochaine action</button>
         </div>
         <div id="lynchArea" style="margin-top:8px"></div>
       </div>
@@ -98,6 +96,18 @@
       <div style="padding:12px">
         <h2>Paramètres</h2>
         <p>Options de la partie, sauvegarde, etc.</p>
+        <div style="margin-top:12px;">
+          <h3 style="margin-bottom:8px">Import / Export</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="exportJsonBtn" class="btn">Exporter JSON</button>
+            <label for="importJsonInputPage" class="btn" style="cursor:pointer;">Importer JSON</label>
+            <input id="importJsonInputPage" type="file" accept="application/json" style="display:none" />
+          </div>
+          <div style="margin-top:8px">
+            <button id="resetStateBtn" type="button" data-debug="reset" class="btn" style="background:rgba(255,255,255,0.03);">Réinitialiser</button>
+          </div>
+          <div style="margin-top:8px;color:var(--muted);font-size:13px">L'export contient les joueurs, le compteur des rôles et les paramètres.</div>
+        </div>
       </div>
     </section>
 
