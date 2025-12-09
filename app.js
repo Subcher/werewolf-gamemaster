@@ -31,26 +31,33 @@ function loadState(){
     // reflect loaded state in the UI
     try{ renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal(); }catch(e){/* ignore if DOM not ready */}
     // hide distribute button if players already have roles assigned
-    try{
-      const btn = document.getElementById('distributeRolesBtn');
-      const hint = document.getElementById('distributeHint');
-      const nextBtn = document.getElementById('nextActionBtn');
-      const hasAssigned = players.some(p=>p.role);
-      if(btn){ btn.style.display = hasAssigned ? 'none' : ''; }
-      if(hint){ hint.style.display = hasAssigned ? 'none' : ''; }
-      if(nextBtn){ nextBtn.style.display = hasAssigned ? '' : 'none'; }
-      if(hasAssigned){
-        // initialize game action if roles are present
-        game.phase = 'night'; game.night = 1; game.substep = 0;
-        setCurrentAction("Le village s'endort.");
-        updateCalendar();
-      }
-    }catch(e){}
+    try{ const btn = document.getElementById('distributeRolesBtn'); if(btn){ const hasAssigned = players.some(p=>p.role); if(hasAssigned) btn.style.display = 'none'; else btn.style.display = ''; } }catch(e){}
+    try{ const hintEl = document.getElementById('distributeHint'); if(hintEl){ const hasAssigned = players.some(p=>p.role); hintEl.style.display = hasAssigned ? 'none' : ''; } }catch(e){}
   }catch(e){ console.warn('loadState failed', e); }
 }
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// helper: remove any inline `display: none` from an element's style attribute
+function removeInlineDisplayNone(el){
+  if(!el) return;
+  try{
+    // preferred: remove the display property via the style object
+    try{ el.style.removeProperty('display'); }catch(e){}
+    try{ el.style.removeProperty('visibility'); }catch(e){}
+    // also remove any hidden attribute or hidden class
+    try{ el.removeAttribute('hidden'); }catch(e){}
+    try{ el.classList && el.classList.remove('hidden'); }catch(e){}
+    // clean up the inline style string if it contains display:none text
+    const raw = el.getAttribute('style') || '';
+    const cleaned = raw.replace(/display\s*:\s*none;?/ig, '').trim();
+    if(cleaned === '') el.removeAttribute('style'); else el.setAttribute('style', cleaned);
+    // ensure element is not forcibly hidden via inline style
+    el.style.display = '';
+    el.style.visibility = '';
+  }catch(e){/* ignore */}
+}
 
 // --- DOM bindings ---
 function bindPlayerForm(){
@@ -385,14 +392,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
           saveState();
           // hide distribute button if roles already assigned
           try{ const btn = document.getElementById('distributeRolesBtn'); if(btn){ const hasAssigned = players.some(p=>p.role); btn.style.display = hasAssigned ? 'none' : ''; } }catch(e){}
-          // hide distribute hint
-          try{ const hint = document.getElementById('distributeHint'); if(hint){ const hasAssigned = players.some(p=>p.role); hint.style.display = hasAssigned ? 'none' : ''; } }catch(e){}
-          // show next action button
-          try{ const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn){ const hasAssigned = players.some(p=>p.role); nextBtn.style.display = hasAssigned ? '' : 'none'; } }catch(e){}
-          // initialize game action state: first action is 'Le village s'endort.' at Nuit 1
-          game.phase = 'night'; game.night = 1; game.substep = 0;
-          setCurrentAction("Le village s'endort.");
-          updateCalendar();
+          try{ const hintEl = document.getElementById('distributeHint'); if(hintEl){ const hasAssigned = players.some(p=>p.role); hintEl.style.display = hasAssigned ? 'none' : ''; } }catch(e){}
           showToast('Import réussi', 'success');
         }catch(err){ showToast('Import JSON invalide', 'error'); console.error(err); }
         importInput.value = '';
@@ -417,6 +417,22 @@ function renderPlayerList(){
     const roleBadge = roleObj ? `<span class="role-badge">${escapeHtml(roleObj.name)}</span>` : '';
     li.innerHTML = `${meta}${roleBadge}<span class="handle">⇅</span>`;
     ul.appendChild(li);
+
+    // add per-item click handler: clicking the line (except the handle) will remove the player
+    li.addEventListener('click', (ev) => {
+      // ignore clicks starting from the handle (drag)
+      if(ev.target && ev.target.closest && ev.target.closest('.handle')) return;
+      const id = li.dataset.id;
+      if(!id) return;
+      const idx = players.findIndex(p=>p.id === id);
+      if(idx === -1) return;
+      const pname = players[idx].name || 'joueur';
+      if(!confirm(`Supprimer le joueur "${pname}" ?`)) return;
+      players.splice(idx, 1);
+      // re-render and persist
+      renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal();
+      saveState();
+    });
   });
   // init sortable
   if(window.Sortable){
@@ -433,6 +449,8 @@ function renderPlayerList(){
       }
     });
   }
+
+  // suppression gérée par les handlers par-élément (plus fiable)
 }
 
 // utility : shuffle array in-place (Fisher-Yates)
@@ -467,68 +485,122 @@ function distributeRoles(){
   renderPlayerList(); renderPlayerCircle(); saveState();
   // hide distribute button now that roles are assigned
   const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.style.display = 'none';
-  // hide distribute hint
+  // hide the hint text as well
   const hint = document.getElementById('distributeHint'); if(hint) hint.style.display = 'none';
-  // show next action button
-  const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn) nextBtn.style.display = '';
-  // initialize game action state: first action is 'Le village s'endort.' at Nuit 1
-  game.phase = 'night'; game.night = 1; game.substep = 0;
-  setCurrentAction("Le village s'endort.");
-  updateCalendar();
   showToast('Rôles distribués', 'success');
+
+  // initialize game state and show status UI
+  try{
+    console.log('[MJ] distributeRoles: initializing game UI');
+    game.phase = 'night'; game.night = 1; game.substep = 0; game.running = true;
+
+    // ensure Game page is visible (in case distribution called from elsewhere)
+    try{
+      const gp = document.getElementById('gamePage'); if(gp) gp.classList.remove('hidden');
+      document.dispatchEvent(new CustomEvent('pageChanged', { detail: 'gamePage' }));
+    }catch(e){/* ignore */}
+
+    const line = document.getElementById('calendarLine');
+    const cur = document.getElementById('currentAction');
+    const nextBtn = document.getElementById('nextActionBtn');
+
+    // ensure any inline `display:none` is removed before applying new styles
+    removeInlineDisplayNone(line);
+    removeInlineDisplayNone(cur);
+    removeInlineDisplayNone(nextBtn);
+
+    if(line){
+      line.style.display = 'block';
+      line.style.padding = '6px 10px';
+      line.style.borderRadius = '8px';
+      line.style.background = 'rgba(255,255,255,0.02)';
+      line.style.fontSize = '16px';
+      line.style.textAlign = 'center';
+      // ensure visible color and stacking
+      line.style.color = '#ffffff';
+      line.style.zIndex = 30;
+    }
+    if(cur){
+      cur.style.display = 'block';
+      cur.style.padding = '4px 8px';
+      cur.style.background = 'transparent';
+      cur.style.fontSize = '14px';
+      cur.style.color = '#e6e6e6';
+      cur.style.zIndex = 30;
+    }
+    if(nextBtn){ nextBtn.style.display = 'inline-block'; }
+  }catch(e){ console.warn('distributeRoles: UI init failed', e); }
+}
+
+// hook the distribute button
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.addEventListener('click', distributeRoles);
+  const resetState = document.getElementById('resetStateBtn');
+  if(resetState){
+    resetState.addEventListener('click', ()=>{
+      if(!confirm('Voulez-vous vraiment réinitialiser l\'état local ? Cela supprimera les joueurs et rôles sauvegardés.')) return;
+      try{
+        localStorage.removeItem(STORAGE_KEY);
+      }catch(e){/* ignore */}
+      // clear in-memory state
+      players.length = 0;
+      // reset role counts
+      availableRoles.forEach(r=>{ r.count = 0; delete r.selectedAt; });
+      // re-render
+      renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal();
+      // show distribute button again
+      const distBtn = document.getElementById('distributeRolesBtn'); if(distBtn) distBtn.style.display = '';
+      showToast('État local réinitialisé', 'success');
+    });
+  }
+});
+
+// --- Circular layout ---
+function renderPlayerCircle(){
+  const container = document.getElementById('playerCircle'); if(!container) return;
+  container.innerHTML = '';
+  const n = players.length;
+  if(n===0) return;
+
+  // compute radius based on parent area
+  const area = container.closest('.circle-area') || container;
+  const rect = area.getBoundingClientRect();
+  const size = Math.min(rect.width || 400, rect.height || 400) || 400;
+  const radius = Math.max(60, Math.floor(size/2) - 40);
+
+  // create items around the circle (no player in the center)
+  players.forEach((p)=>{
+    const li = document.createElement('li');
+    li.className = 'circle-item player';
+    li.dataset.id = p.id;
+    const roleObj = p.role ? availableRoles.find(r=>r.id === p.role) : null;
+    const roleImg = roleObj ? `<img src="${roleObj.img}" class="role-avatar-chip" alt="${escapeHtml(roleObj.name)}" width="40" height="40">` : '';
+    li.innerHTML = `<div class="chip">${roleImg}<div class="name">${escapeHtml(p.name)}</div></div>`;
+    li.style.position = 'absolute';
+    li.style.left = '50%'; li.style.top = '50%';
+    li.style.transform = 'translate(-50%,-50%)';
+    container.appendChild(li);
+  });
+
+  const elems = Array.from(container.children);
+  const slice = 360 / elems.length;
+  const start = -90; // start at top
+  elems.forEach((el, idx)=>{
+    const angle = slice * idx + start;
+    const rot = `rotate(${angle}deg)`;
+    const rev = `rotate(${-angle}deg)`;
+    el.style.transform = `translate(-50%,-50%) ${rot} translate(${radius}px) ${rev}`;
+    el.style.transformOrigin = 'center center';
+  });
 }
 
 // --- Game controls (minimal placeholders) ---
-// game state: running, night counter, phase = 'night'|'day'|null
-const game = { running:false, night:0, phase: null };
-function startGame(){
-  if(players.length===0){ showToast('Ajoutez des joueurs avant de démarrer.', 'error'); return; }
-  game.running = true; game.night = Math.max(1, game.night || 1); game.phase = game.phase || 'night';
-  setCurrentAction(game.phase === 'night' ? `Nuit ${game.night}` : `Jour ${game.night}`);
-  showToast('Partie démarrée (simulation)');
-}
-function resetGame(){
-  game.running=false; game.night=0; game.phase = null; players.length=0; renderPlayerList(); renderPlayerCircle();
-  setCurrentAction('Aucune');
-}
-
-// Set the action label in the UI
-function setCurrentAction(text){
-  const el = document.getElementById('currentAction'); if(!el) return; el.textContent = text || 'Aucune';
-}
-
-// Update calendar display (Nuit X / Jour X)
-function updateCalendar(){
-  const el = document.getElementById('calendar'); if(!el) return;
-  if(game.phase === 'night') el.textContent = `Nuit ${game.night || 1}`;
-  else if(game.phase === 'day') el.textContent = `Jour ${game.night || 1}`;
-  else el.textContent = '—';
-}
-
-// --- Reset helper (extracted) ---
-let _resetInProgress = false;
-function resetLocalState(confirmPrompt = true){
-  if(_resetInProgress) { console.log('[MJ] reset already in progress'); return; }
-  if(confirmPrompt && !confirm("Voulez-vous vraiment réinitialiser l'état local ? Cela supprimera les joueurs et rôles sauvegardés.")) return;
-  _resetInProgress = true;
-  console.log('[MJ] resetLocalState called');
-  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){/* ignore */}
-  // clear in-memory state
-  players.length = 0;
-  // reset role counts
-  availableRoles.forEach(r=>{ r.count = 0; delete r.selectedAt; });
-  // re-render
-  try{ renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal(); }catch(e){console.warn('render after reset failed', e)}
-  // reset game action
-  try{ game.phase = null; game.night = 0; game.substep = 0; setCurrentAction('Aucune'); updateCalendar(); }catch(e){/* ignore if game undefined */}
-  // show distribute hint and button again
-  const distBtn = document.getElementById('distributeRolesBtn'); if(distBtn) distBtn.style.display = '';
-  const hint = document.getElementById('distributeHint'); if(hint) hint.style.display = '';
-  const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn) nextBtn.style.display = 'none';
+const game = { running:false, night:0 };
+function startGame(){ if(players.length===0){ showToast('Ajoutez des joueurs avant de démarrer.', 'error'); return; } game.running=true; game.night=1; showToast('Partie démarrée (simulation)'); }
+function resetGame(){ game.running=false; game.night=0; players.length=0; renderPlayerList(); renderPlayerCircle();
   saveState();
-  showToast('État local réinitialisé', 'success');
-  // small debounce to avoid accidental double-run
-  setTimeout(()=>{ _resetInProgress = false; }, 600);
+  // show the distribute button again (fresh start)
+  const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.style.display = '';
 }
 
 // wire basic controls when DOM ready
@@ -544,26 +616,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // wire game control buttons if present
   const s = document.getElementById('startGameBtn'); if(s) s.addEventListener('click', startGame);
   const r = document.getElementById('resetGameBtn'); if(r) r.addEventListener('click', ()=>{ if(confirm('Réinitialiser la partie ?')) resetGame(); });
-  // hook the distribute button
-  const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.addEventListener('click', distributeRoles);
-  const resetState = document.getElementById('resetStateBtn');
-  if(resetState){
-    resetState.addEventListener('click', ()=> resetLocalState(true));
-    console.log('[MJ] resetStateBtn listener attached');
-  }
-  // delegated fallback (in case of dynamic DOM differences)
-  document.addEventListener('click', (ev)=>{
-    const t = ev.target || ev.srcElement;
-    if(!t) return;
-    if(t.id === 'resetStateBtn'){
-      // small protection: if direct handler already ran, resetLocalState handles _resetInProgress
-      resetLocalState(true);
-    }
-  });
-  // next action button (game flow)
-  const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn) nextBtn.addEventListener('click', ()=>{
-    nextAction();
-  });
 });
 
 // ensure binding on SPA navigation
@@ -591,19 +643,3 @@ function showToast(message, type='info', duration=3500){
   requestAnimationFrame(()=> t.classList.add('show'));
   setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=> t.remove(), 220); }, duration);
 }
-
-// expose resetLocalState for debugging in console
-try{ window.resetLocalState = resetLocalState; }catch(e){}
-// immediate attach (in case DOMContentLoaded already fired)
-try{
-  const immediateResetBtn = document.getElementById('resetStateBtn');
-  if(immediateResetBtn){
-    immediateResetBtn.addEventListener('click', ()=> resetLocalState(true));
-    // also set onclick and pointerup to be extra robust in environments où click may be intercepted
-    immediateResetBtn.onclick = ()=> resetLocalState(true);
-    immediateResetBtn.addEventListener && immediateResetBtn.addEventListener('pointerup', ()=> resetLocalState(true));
-    console.log('[MJ] immediate resetStateBtn listener attached');
-  } else {
-    console.log('[MJ] resetStateBtn not found during immediate attach');
-  }
-}catch(e){ console.warn('attach immediate reset failed', e); }

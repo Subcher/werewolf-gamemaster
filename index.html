@@ -55,12 +55,13 @@
           <button id="distributeRolesBtn" class="btn">Distribution des rôles</button>
           <div id="distributeHint" style="margin-top:8px;color:var(--muted);font-size:13px">Cliquez pour distribuer les rôles aux joueurs (aléatoire).</div>
         </div>
-        <div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:8px">
-          <div><strong>Action en cours:</strong> <span id="currentAction">Aucune</span></div>
-          <div><strong>Calendrier:</strong> <span id="calendar">—</span></div>
-          <button id="nextActionBtn" class="btn" style="display:none;">Prochaine action</button>
-        </div>
         <div id="lynchArea" style="margin-top:8px"></div>
+      </div>
+
+      <div id="gameStatus" style="margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div id="calendarLine" style="font-weight:700;color:var(--text);display:none">Calendrier — —</div>
+        <div id="currentAction" style="color:var(--muted);font-size:15px;display:none">Aucune</div>
+        <button id="nextActionBtn" class="btn" style="display:none">Prochaine action</button>
       </div>
     </section>
 
@@ -104,7 +105,7 @@
             <input id="importJsonInputPage" type="file" accept="application/json" style="display:none" />
           </div>
           <div style="margin-top:8px">
-            <button id="resetStateBtn" type="button" data-debug="reset" class="btn" style="background:rgba(255,255,255,0.03);">Réinitialiser</button>
+            <button id="resetStateBtn" class="btn" style="background:rgba(255,255,255,0.03);">Réinitialiser</button>
           </div>
           <div style="margin-top:8px;color:var(--muted);font-size:13px">L'export contient les joueurs, le compteur des rôles et les paramètres.</div>
         </div>

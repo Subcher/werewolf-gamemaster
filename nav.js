@@ -7,30 +7,9 @@
   if(!burger || !sidebar) return;
   const links = Array.from(sidebar.querySelectorAll('a[data-page]'));
   const pages = qa('section.page');
-
-  // create backdrop element to detect outside clicks (and dim content)
-  let backdrop = q('#sidebarBackdrop');
-  if(!backdrop){
-    backdrop = document.createElement('div');
-    backdrop.id = 'sidebarBackdrop';
-    backdrop.className = 'sidebar-backdrop hidden';
-    document.body.appendChild(backdrop);
-  }
-
-  function showBackdrop(){ backdrop.classList.remove('hidden'); }
-  function hideBackdrop(){ backdrop.classList.add('hidden'); }
-
-  function closeSidebar(){ sidebar.classList.add('hidden'); hideBackdrop(); }
-  function openSidebar(){ sidebar.classList.remove('hidden'); showBackdrop(); }
-  function toggleSidebar(){ if(sidebar.classList.contains('hidden')) openSidebar(); else closeSidebar(); }
-
+  function closeSidebar(){ sidebar.classList.add('hidden'); }
+  function toggleSidebar(){ sidebar.classList.toggle('hidden'); }
   burger.addEventListener('click', ()=> toggleSidebar());
-
-  // clicking on backdrop (outside) closes the sidebar
-  backdrop.addEventListener('click', ()=>{ closeSidebar(); });
-
-  // also close on Escape key
-  document.addEventListener('keydown', (ev)=>{ if(ev.key === 'Escape' || ev.key === 'Esc'){ if(!sidebar.classList.contains('hidden')) closeSidebar(); }});
 
   links.forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
