@@ -519,6 +519,8 @@ function distributeRoles(){
       // ensure visible color and stacking
       line.style.color = '#ffffff';
       line.style.zIndex = 30;
+      // set calendar text to show current night/day
+      try{ line.textContent = `Calendrier — Nuit ${game.night}`; }catch(e){}
     }
     if(cur){
       cur.style.display = 'block';
@@ -527,6 +529,8 @@ function distributeRoles(){
       cur.style.fontSize = '14px';
       cur.style.color = '#e6e6e6';
       cur.style.zIndex = 30;
+      // show the first action
+      try{ cur.textContent = "Le village s'endort"; }catch(e){}
     }
     if(nextBtn){ nextBtn.style.display = 'inline-block'; }
   }catch(e){ console.warn('distributeRoles: UI init failed', e); }
