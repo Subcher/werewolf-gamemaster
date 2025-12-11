@@ -519,8 +519,6 @@ function distributeRoles(){
       // ensure visible color and stacking
       line.style.color = '#ffffff';
       line.style.zIndex = 30;
-      // set calendar text to show current night/day
-      try{ line.textContent = `Calendrier — Nuit ${game.night}`; }catch(e){}
     }
     if(cur){
       cur.style.display = 'block';
@@ -533,6 +531,9 @@ function distributeRoles(){
       try{ cur.textContent = "Le village s'endort"; }catch(e){}
     }
     if(nextBtn){ nextBtn.style.display = 'inline-block'; }
+
+    // Removed auto-start of Cupidon selection here so the first action remains "Le village s'endort"
+    // Cupidon selection will be triggered by the 'Prochaine action' button via advanceAction()
   }catch(e){ console.warn('distributeRoles: UI init failed', e); }
 }
 
@@ -599,12 +600,36 @@ function renderPlayerCircle(){
 }
 
 // --- Game controls (minimal placeholders) ---
-const game = { running:false, night:0 };
+const game = { running:false, night:0, cupidonDone:false };
 function startGame(){ if(players.length===0){ showToast('Ajoutez des joueurs avant de démarrer.', 'error'); return; } game.running=true; game.night=1; showToast('Partie démarrée (simulation)'); }
 function resetGame(){ game.running=false; game.night=0; players.length=0; renderPlayerList(); renderPlayerCircle();
   saveState();
   // show the distribute button again (fresh start)
   const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.style.display = '';
+}
+
+// Advance the in-night action sequence. On first call after distribution, show Cupidon selection if Cupidon exists.
+function advanceAction(){
+  const cur = document.getElementById('currentAction'); if(!cur) return;
+  // if cupidon already done for this night, just show placeholder
+  if(game.cupidonDone){ cur.textContent = 'Aucune action définie pour l\'instant'; return; }
+  // if Cupidon is present among assigned roles, start selection
+  const cup = players.find(p=>p.role === 'Cupidon');
+  if(cup){
+    // start interactive selection: instruct the user to click two players in the circle
+    game.cupidonDone = true;
+    game.awaitingCupidon = true;
+    game.cupidonId = cup.id;
+    game.couple = [];
+    cur.textContent = "Cupidon : sélectionnez 2 joueurs pour former un couple (cliquez sur leurs noms)";
+    showToast('Sélection Cupidon active — cliquez 2 joueurs dans le cercle', 'info', 6000);
+    // the circle click handlers will use game.awaitingCupidon to toggle selection
+    renderPlayerCircle();
+    return;
+  }
+  // otherwise no cupidon, mark as done and show default message
+  game.cupidonDone = true;
+  cur.textContent = 'Le village s\'endort';
 }
 
 // wire basic controls when DOM ready
@@ -620,6 +645,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // wire game control buttons if present
   const s = document.getElementById('startGameBtn'); if(s) s.addEventListener('click', startGame);
   const r = document.getElementById('resetGameBtn'); if(r) r.addEventListener('click', ()=>{ if(confirm('Réinitialiser la partie ?')) resetGame(); });
+  const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn) nextBtn.addEventListener('click', advanceAction);
 });
 
 // ensure binding on SPA navigation
