@@ -3,41 +3,24 @@ const players = [];
 // options globales (sauvegardées)
 const options = { villageType: 'simple' };
 
-// Persistance simple (localStorage)
-const STORAGE_KEY = 'werewolf_state';
+// Persistence removed: keep state in-memory only (no localStorage)
 function saveState(){
-  try{
-    const rolesState = availableRoles ? availableRoles.map(r=>({ id: r.id, count: r.count || 0, selectedAt: r.selectedAt || null })) : [];
-    // Save players with assigned roles so distribution persists
-    const state = { players: players.map(p=>({ id: p.id, name: p.name, role: p.role || null })), roles: rolesState, options };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    console.log('[MJ] État sauvegardé');
-  }catch(e){ console.warn('saveState failed', e); }
+  // persistence intentionally disabled — state is volatile and lives only in memory
+  // calls to saveState remain for compatibility but do nothing now
 }
 
 function loadState(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return;
-    const st = JSON.parse(raw);
-    if(st.players && Array.isArray(st.players)){
-      players.length = 0; st.players.forEach(p=>{ if(p && p.id && p.name) players.push({ id: String(p.id), name: String(p.name), role: p.role || null }); });
-    }
-    if(st.roles && Array.isArray(st.roles) && availableRoles){
-      st.roles.forEach(rs=>{ const r = availableRoles.find(x=>x.id === rs.id); if(r) r.count = typeof rs.count === 'number' ? rs.count : 0; });
-    }
-    if(st.options && typeof st.options === 'object') Object.assign(options, st.options);
-    console.log('[MJ] État chargé');
-    // reflect loaded state in the UI
-    try{ renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal(); }catch(e){/* ignore if DOM not ready */}
-    // hide distribute button if players already have roles assigned
-    try{ const btn = document.getElementById('distributeRolesBtn'); if(btn){ const hasAssigned = players.some(p=>p.role); if(hasAssigned) btn.style.display = 'none'; else btn.style.display = ''; } }catch(e){}
-    try{ const hintEl = document.getElementById('distributeHint'); if(hintEl){ const hasAssigned = players.some(p=>p.role); hintEl.style.display = hasAssigned ? 'none' : ''; } }catch(e){}
-  }catch(e){ console.warn('loadState failed', e); }
+  // persistence intentionally disabled — nothing to load
 }
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// utilitaire: retourner vrai si un rôle est présent parmi les joueurs assignés
+function isRoleInGame(roleId){
+  return players.some(p => p.role === roleId);
+}
+try{ if(typeof window !== 'undefined') window.isRoleInGame = isRoleInGame; }catch(e){}
 
 // helper: remove any inline `display: none` from an element's style attribute
 function removeInlineDisplayNone(el){
@@ -412,14 +395,18 @@ function renderPlayerList(){
     li.dataset.id = p.id;
     const roleObj = p.role ? availableRoles.find(r=>r.id === p.role) : null;
     const roleImgHtml = roleObj ? `<img src="${roleObj.img}" class="player-role-small" alt="${escapeHtml(roleObj.name)}" width="40" height="40">` : '';
+    // show a heart if the player is in a couple
+    const heartHtml = p.coupleWith ? `<span class="couple-heart" style="color:#e25555;margin-left:6px">❤</span>` : '';
     // player-meta stacks role image (if any) above the player's name
-    const meta = `<div class="player-meta">${roleImgHtml}<div class="player-name">${escapeHtml(p.name)}</div></div>`;
+    const meta = `<div class="player-meta">${roleImgHtml}<div class="player-name">${escapeHtml(p.name)}${heartHtml}</div></div>`;
     const roleBadge = roleObj ? `<span class="role-badge">${escapeHtml(roleObj.name)}</span>` : '';
     li.innerHTML = `${meta}${roleBadge}<span class="handle">⇅</span>`;
     ul.appendChild(li);
 
     // add per-item click handler: clicking the line (except the handle) will remove the player
     li.addEventListener('click', (ev) => {
+      // if Cupidon selection is active, clicks in the list should not remove players
+      if(game && game.awaitingCupidon){ showToast('Sélection Cupidon active — cliquez dans le cercle pour choisir les joueurs.', 'info'); return; }
       // ignore clicks starting from the handle (drag)
       if(ev.target && ev.target.closest && ev.target.closest('.handle')) return;
       const id = li.dataset.id;
@@ -479,8 +466,15 @@ function distributeRoles(){
   if(pool.length !== n){ showToast('Erreur interne : pool de rôles incohérent.', 'error'); return; }
   shuffle(pool);
 
+  // clear any previous couple state and Cupidon flags
+  players.forEach(p => { delete p.coupleWith; });
+  game.cupidonDone = false; game.awaitingCupidon = false; game.cupidonSelections = [];
+
   // assign
   players.forEach((p, idx)=>{ p.role = pool[idx]; });
+
+  // initialize game state: start at Day 1 (we don't start in night)
+  game.phase = 'day'; game.day = 1; game.night = 0; game.running = true; game.readyToWake = false; game.sleeping = false; game.pendingNightActions = [];
 
   renderPlayerList(); renderPlayerCircle(); saveState();
   // hide distribute button now that roles are assigned
@@ -489,10 +483,9 @@ function distributeRoles(){
   const hint = document.getElementById('distributeHint'); if(hint) hint.style.display = 'none';
   showToast('Rôles distribués', 'success');
 
-  // initialize game state and show status UI
+  // initialize game UI
   try{
     console.log('[MJ] distributeRoles: initializing game UI');
-    game.phase = 'night'; game.night = 1; game.substep = 0; game.running = true;
 
     // ensure Game page is visible (in case distribution called from elsewhere)
     try{
@@ -508,6 +501,9 @@ function distributeRoles(){
     removeInlineDisplayNone(line);
     removeInlineDisplayNone(cur);
     removeInlineDisplayNone(nextBtn);
+
+    // update calendar display to show "Jour 1"
+    updateCalendarDisplay();
 
     if(line){
       line.style.display = 'block';
@@ -527,40 +523,80 @@ function distributeRoles(){
       cur.style.fontSize = '14px';
       cur.style.color = '#e6e6e6';
       cur.style.zIndex = 30;
-      // show the first action
-      try{ cur.textContent = "Le village s'endort"; }catch(e){}
+      // show the first action: day start
+      try{ cur.textContent = "Le village est réveillé"; }catch(e){}
     }
     if(nextBtn){ nextBtn.style.display = 'inline-block'; }
 
-    // Removed auto-start of Cupidon selection here so the first action remains "Le village s'endort"
-    // Cupidon selection will be triggered by the 'Prochaine action' button via advanceAction()
   }catch(e){ console.warn('distributeRoles: UI init failed', e); }
 }
 
-// hook the distribute button
-document.addEventListener('DOMContentLoaded', ()=>{
-  const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.addEventListener('click', distributeRoles);
-  const resetState = document.getElementById('resetStateBtn');
-  if(resetState){
-    resetState.addEventListener('click', ()=>{
-      if(!confirm('Voulez-vous vraiment réinitialiser l\'état local ? Cela supprimera les joueurs et rôles sauvegardés.')) return;
-      try{
-        localStorage.removeItem(STORAGE_KEY);
-      }catch(e){/* ignore */}
-      // clear in-memory state
-      players.length = 0;
-      // reset role counts
-      availableRoles.forEach(r=>{ r.count = 0; delete r.selectedAt; });
-      // re-render
-      renderPlayerList(); renderPlayerCircle(); if(typeof renderRoles === 'function') renderRoles(); if(typeof updateRolesTotal === 'function') updateRolesTotal();
-      // show distribute button again
-      const distBtn = document.getElementById('distributeRolesBtn'); if(distBtn) distBtn.style.display = '';
-      showToast('État local réinitialisé', 'success');
-    });
-  }
-});
+// --- Game helpers: calendar and night action flow ---
+function updateCalendarDisplay(){
+  const cal = document.getElementById('calendarLine'); if(!cal) return;
+  if(game.phase === 'day') cal.textContent = `Jour ${game.day || 1}`;
+  else cal.textContent = `Nuit ${game.night || 0}`;
+}
 
-// --- Circular layout ---
+function startNight(){
+  // increment night counter and prepare night actions
+  game.night = (game.night || 0) + 1;
+  game.phase = 'night';
+  game.readyToWake = false;
+  game.pendingNightActions = [];
+  // Cupidon plays on night 1 only
+  if(isRoleInGame('Cupidon') && game.night === 1 && !game.cupidonDone){
+    game.pendingNightActions.push('Cupidon');
+  }
+  // TODO: push other night actions here based on roles present (Loups, Voyante, Salvateur...)
+
+  updateCalendarDisplay();
+
+  // start first night action if present
+  if(game.pendingNightActions.length > 0){
+    const next = game.pendingNightActions[0];
+    const cur = document.getElementById('currentAction');
+    if(next === 'Cupidon'){
+      game.awaitingCupidon = true;
+      if(cur) cur.textContent = "Cupidon : sélectionnez 2 joueurs pour former un couple (cliquez sur leurs noms dans le cercle)";
+      showToast('Sélection Cupidon active — cliquez 2 joueurs dans le cercle', 'info', 6000);
+      renderPlayerCircle();
+    } else {
+      // nothing to do, wake immediately
+      const cur = document.getElementById('currentAction'); if(cur) cur.textContent = 'Le village se réveille';
+      game.readyToWake = true;
+    }
+  }
+}
+
+function finishNightAction(actionId){
+  if(actionId === 'Cupidon'){
+    game.cupidonDone = true;
+    game.awaitingCupidon = false;
+  }
+  if(Array.isArray(game.pendingNightActions)){
+    const idx = game.pendingNightActions.indexOf(actionId);
+    if(idx !== -1) game.pendingNightActions.splice(idx,1);
+  }
+
+  // proceed to next action or prepare wake
+  if(game.pendingNightActions && game.pendingNightActions.length > 0){
+    const next = game.pendingNightActions[0];
+    const cur = document.getElementById('currentAction');
+    if(next === 'Cupidon'){
+      game.awaitingCupidon = true;
+      if(cur) cur.textContent = "Cupidon : sélectionnez 2 joueurs pour former un couple (cliquez sur leurs noms dans le cercle)";
+      renderPlayerCircle();
+    }
+  } else {
+    const cur = document.getElementById('currentAction'); if(cur) cur.textContent = 'Le village se réveille';
+    game.readyToWake = true;
+  }
+  renderPlayerList(); renderPlayerCircle();
+}
+
+// --- Couple management (Cupidon) ---
+// replace in-circle finalization to call finishNightAction('Cupidon')
 function renderPlayerCircle(){
   const container = document.getElementById('playerCircle'); if(!container) return;
   container.innerHTML = '';
@@ -580,15 +616,60 @@ function renderPlayerCircle(){
     li.dataset.id = p.id;
     const roleObj = p.role ? availableRoles.find(r=>r.id === p.role) : null;
     const roleImg = roleObj ? `<img src="${roleObj.img}" class="role-avatar-chip" alt="${escapeHtml(roleObj.name)}" width="40" height="40">` : '';
-    li.innerHTML = `<div class="chip">${roleImg}<div class="name">${escapeHtml(p.name)}</div></div>`;
+    // add a small heart marker to the chip if player is coupled
+    const coupleHeartHtml = p.coupleWith ? `<span class="couple-heart" style="position:absolute;top:6px;right:8px;color:#e25555;font-size:18px">❤</span>` : '';
+    li.innerHTML = `<div class="chip" style="position:relative">${roleImg}${coupleHeartHtml}<div class="name">${escapeHtml(p.name)}</div></div>`;
     li.style.position = 'absolute';
     li.style.left = '50%'; li.style.top = '50%';
     li.style.transform = 'translate(-50%,-50%)';
     container.appendChild(li);
+
+    // If awaiting Cupidon selection, allow clicking players in the circle to select couple
+    li.addEventListener('click', (ev) => {
+      if(!game || !game.awaitingCupidon) return; // only handle when cupidon action active
+      ev.stopPropagation(); ev.preventDefault();
+      // prevent selecting the Cupidon themself
+      const cup = players.find(pl => pl.role === 'Cupidon');
+      if(cup && cup.id === p.id){ showToast('Cupidon ne peut pas être choisi.', 'error'); return; }
+
+      game.cupidonSelections = game.cupidonSelections || [];
+      // toggle selection
+      const idx = game.cupidonSelections.indexOf(p.id);
+      if(idx !== -1){
+        // already selected -> unselect
+        game.cupidonSelections.splice(idx,1);
+        li.classList.remove('selected-for-cupidon');
+        return;
+      }
+      if(game.cupidonSelections.length >= 2){ showToast('Vous avez déjà sélectionné 2 joueurs.', 'info'); return; }
+      game.cupidonSelections.push(p.id);
+      li.classList.add('selected-for-cupidon');
+
+      // if two selected, finalize couple
+      if(game.cupidonSelections.length === 2){
+        const [idA, idB] = game.cupidonSelections;
+        const pa = players.find(x => x.id === idA);
+        const pb = players.find(x => x.id === idB);
+        if(!pa || !pb){ showToast('Sélection invalide', 'error'); game.cupidonSelections = []; renderPlayerCircle(); return; }
+        // record couple in the players data
+        pa.coupleWith = pb.id; pb.coupleWith = pa.id;
+        // finalize via finishNightAction to continue night sequence
+        try{ finishNightAction('Cupidon'); }catch(e){
+          // fallback if finishNightAction not defined
+          game.awaitingCupidon = false; game.cupidonDone = true; game.cupidonSelections = [];
+        }
+        // clear temporary selections
+        game.cupidonSelections = [];
+        showToast(`Couple formé : ${pa.name} ❤ ${pb.name}`, 'success');
+        // re-render lists and circle to show hearts and remove selection styles
+        renderPlayerList(); renderPlayerCircle();
+      }
+    });
+
   });
 
   const elems = Array.from(container.children);
-  const slice = 360 / elems.length;
+  const slice = elems.length ? (360 / elems.length) : 360;
   const start = -90; // start at top
   elems.forEach((el, idx)=>{
     const angle = slice * idx + start;
@@ -608,29 +689,53 @@ function resetGame(){ game.running=false; game.night=0; players.length=0; render
   const btn = document.getElementById('distributeRolesBtn'); if(btn) btn.style.display = '';
 }
 
-// Advance the in-night action sequence. On first call after distribution, show Cupidon selection if Cupidon exists.
+// Advance the in-night action sequence and day/night transitions
 function advanceAction(){
   const cur = document.getElementById('currentAction'); if(!cur) return;
-  // if cupidon already done for this night, just show placeholder
-  if(game.cupidonDone){ cur.textContent = 'Aucune action définie pour l\'instant'; return; }
-  // if Cupidon is present among assigned roles, start selection
-  const cup = players.find(p=>p.role === 'Cupidon');
-  if(cup){
-    // start interactive selection: instruct the user to click two players in the circle
-    game.cupidonDone = true;
-    game.awaitingCupidon = true;
-    game.cupidonId = cup.id;
-    game.couple = [];
-    cur.textContent = "Cupidon : sélectionnez 2 joueurs pour former un couple (cliquez sur leurs noms)";
-    showToast('Sélection Cupidon active — cliquez 2 joueurs dans le cercle', 'info', 6000);
-    // the circle click handlers will use game.awaitingCupidon to toggle selection
-    renderPlayerCircle();
-    return;
+
+  // If we are in day phase
+  if(game.phase === 'day'){
+    // first press: village s'endort message
+    if(!game.sleeping){
+      game.sleeping = true;
+      cur.textContent = 'Le village s\'endort';
+      return;
+    }
+    // second press: actually enter the night and start night actions
+    if(game.sleeping){
+      game.sleeping = false;
+      startNight();
+      return;
+    }
   }
-  // otherwise no cupidon, mark as done and show default message
-  game.cupidonDone = true;
-  cur.textContent = 'Le village s\'endort';
+
+  // If we are in night phase
+  if(game.phase === 'night'){
+    // if awaiting interactive selection (e.g., Cupidon), block advance
+    if(game.awaitingCupidon){ showToast('Sélection Cupidon active — terminez-la avant de continuer.', 'info'); return; }
+
+    // if there are pending actions, nothing to do here (they finish via finishNightAction)
+    if(Array.isArray(game.pendingNightActions) && game.pendingNightActions.length > 0){
+      // wait for actions to complete
+      return;
+    }
+
+    if(game.readyToWake){
+      // perform wake -> go to next day
+      game.phase = 'day'; game.day = (game.day || 1) + 1; game.readyToWake = false;
+      updateCalendarDisplay();
+      cur.textContent = 'Le village est réveillé';
+      return;
+    }
+
+    // fallback: if no pending and not readyToWake, set wake
+    if((!game.pendingNightActions || game.pendingNightActions.length === 0) && !game.readyToWake){
+      game.readyToWake = true; cur.textContent = 'Le village se réveille';
+      return;
+    }
+  }
 }
+try{ if(typeof window !== 'undefined') window.advanceAction = advanceAction; }catch(e){}
 
 // wire basic controls when DOM ready
 document.addEventListener('DOMContentLoaded', ()=>{
@@ -646,6 +751,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const s = document.getElementById('startGameBtn'); if(s) s.addEventListener('click', startGame);
   const r = document.getElementById('resetGameBtn'); if(r) r.addEventListener('click', ()=>{ if(confirm('Réinitialiser la partie ?')) resetGame(); });
   const nextBtn = document.getElementById('nextActionBtn'); if(nextBtn) nextBtn.addEventListener('click', advanceAction);
+  // ensure distribute button wired
+  const distBtn = document.getElementById('distributeRolesBtn'); if(distBtn) distBtn.addEventListener('click', distributeRoles);
 });
 
 // ensure binding on SPA navigation
