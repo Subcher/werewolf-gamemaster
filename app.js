@@ -153,7 +153,8 @@ const availableRoles = [
     {id: 'Chien-Loup', name: 'Chien-Loup', img: 'images/Chien-Loup.webp', camp: 'Loup', count: 0},
     {id: 'Citoyen', name: 'Citoyen', img: 'images/Citoyen.webp', camp: 'Village', count: 0},
     {id: 'Cupidon', name: 'Cupidon', img: 'images/Cupidon.webp', camp: 'Village', count: 0},
-    {id: 'Détective', name: 'Détective', img: 'images/Détective.webp', camp: 'Village', count: 0},
+    //Ne peut pas être implémenter donc temporairement désactivé
+    //{id: 'Détective', name: 'Détective', img: 'images/Détective.webp', camp: 'Village', count: 0},
     {id: 'Enfant Sauvage', name: 'Enfant Sauvage', img: 'images/Enfant Sauvage.webp', camp: 'Village', count: 0},
     {id: 'Idiot Du Village', name: 'Idiot Du Village', img: 'images/Idiot Du Village.webp', camp: 'Village', count: 0},
     {
@@ -735,9 +736,7 @@ function distributeRoles() {
     game.detectiveDone = false;
     game.awaitingDetective = false;
     game.detectiveSelections = [];
-    // clear Soeurs state
-    game.soeursDone = false;
-    game.awaitingSoeurs = false;
+    game.detectivePlayerId = null;
 
     // assign
     players.forEach((p, idx) => {
@@ -886,6 +885,9 @@ function startNight() {
             } else {
                 game.awaitingDetective = true;
                 game.detectiveSelections = [];
+                // record the detecting player's id so we reliably prevent self-selection
+                const detPlayer = players.find(pl => pl.role === 'Détective');
+                game.detectivePlayerId = detPlayer ? detPlayer.id : null;
                 if (cur) cur.textContent = "Détective : comparez le camp de 2 joueurs (cliquez sur deux joueurs dans le cercle)";
                 showToast('Sélection Détective active — cliquez 2 joueurs dans le cercle', 'info', 6000);
                 renderPlayerCircle();
@@ -929,6 +931,7 @@ function finishNightAction(actionId) {
     if (actionId === 'Detective') {
         game.detectiveDone = true;
         game.awaitingDetective = false;
+        game.detectivePlayerId = null;
     }
     if (Array.isArray(game.pendingNightActions)) {
         const idx = game.pendingNightActions.indexOf(actionId);
@@ -1148,16 +1151,19 @@ function renderPlayerCircle() {
             if (game && game.awaitingDetective) {
                 ev.stopPropagation();
                 ev.preventDefault();
-                // ensure there's a Detective in the game
-                const det = players.find(pl => pl.role === 'Détective');
-                if (!det) {
+                // determine detective id (use stored id if present)
+                const detId = game.detectivePlayerId || (players.find(pl => pl.role === 'Détective') || {}).id;
+                // ensure there is a Detective in the game
+                if (!detId) {
                     showToast('Aucun Détective présent.', 'error');
                     finishNightAction('Detective');
                     return;
                 }
                 // Prevent selecting the Detective themself
-                if (p.id === det.id) {
-                    showToast('Le Détective ne peut pas se sélectionner lui‑même. Choisissez deux autres joueurs.', 'error');
+                if (p.id === detId) {
+                    showToast('Le Détective ne peut pas être testé. Choisissez deux autres joueurs.', 'error');
+                    // visually mark the detective as non-selectable
+                    li.classList.add('detective-unselectable');
                     return;
                 }
 
@@ -1173,11 +1179,32 @@ function renderPlayerCircle() {
                     showToast('Vous avez déjà sélectionné 2 joueurs.', 'info');
                     return;
                 }
+                // Prevent selecting the same player twice (defensive)
+                if (game.detectiveSelections.includes(p.id)) {
+                    showToast('Ce joueur est déjà sélectionné.', 'info');
+                    return;
+                }
+                // push selection
                 game.detectiveSelections.push(p.id);
                 li.classList.add('selected-for-detective');
 
+                // If only one other non-detective player exists, warn
+                const nonDetCount = players.filter(x => x.id !== detId).length;
+                if (nonDetCount < 2) {
+                    showToast('Impossible : pas assez de joueurs non-Détective à comparer.', 'error');
+                    game.detectiveSelections = [];
+                    renderPlayerCircle();
+                    return;
+                }
+
                 if (game.detectiveSelections.length === 2) {
                     const [idA, idB] = game.detectiveSelections;
+                    if (idA === idB) {
+                        showToast('Sélection invalide : choisissez deux joueurs distincts.', 'error');
+                        game.detectiveSelections = [];
+                        renderPlayerCircle();
+                        return;
+                    }
                     const pa = players.find(x => x.id === idA);
                     const pb = players.find(x => x.id === idB);
                     if (!pa || !pb) {
@@ -1187,7 +1214,7 @@ function renderPlayerCircle() {
                         return;
                     }
                     // Safety: ensure neither selected player is the Detective
-                    if (pa.role === 'Détective' || pb.role === 'Détective') {
+                    if (pa.id === detId || pb.id === detId) {
                         showToast('Le Détective ne peut pas être testé. Choisissez deux joueurs différents du Détective.', 'error');
                         game.detectiveSelections = [];
                         renderPlayerCircle();
