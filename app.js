@@ -21,6 +21,9 @@ function escapeHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// expose for console debugging
+try { if (typeof window !== 'undefined') window.traceLog = traceLog; } catch (e) {}
+
 // utilitaire: retourner vrai si un rôle est présent parmi les joueurs assignés
 function isRoleInGame(roleId) {
     return players.some(p => p.role === roleId);
@@ -96,6 +99,81 @@ function removeInlineDisplayNone(el) {
         el.style.display = '';
         el.style.visibility = '';
     } catch (e) {/* ignore */
+    }
+}
+
+// Utility: clear selection classes for any action and reset selection arrays
+function clearActionSelections() {
+    try {
+        document.querySelectorAll('.selected-for-cupidon, .selected-for-detective, .selected-for-voyante, .detective-unselectable').forEach(el => {
+            el.classList.remove('selected-for-cupidon', 'selected-for-detective', 'selected-for-voyante', 'detective-unselectable');
+        });
+    } catch (e) {}
+    try { if (game) game.detectiveSelections = []; } catch (e) {}
+    try { if (game) game.cupidonSelections = []; } catch (e) {}
+    try { if (game) game.voyanteSelection = null; } catch (e) {}
+}
+
+// Utility: show a large player card (for Voyante) so the MJ can show the phone to the player
+function showLargePlayerCard(player) {
+    try {
+        if (!player) return;
+        // Voyante should see the actual current role of the player (no informer transformation)
+        try { traceLog('Voyante.overlay.open', {playerId: player.id, role: player.role}); } catch (e) {}
+        const roleObj = availableRoles.find(r => r.id === player.role) || {id: player.role, name: player.role || 'Inconnu', img: 'images/Voyante.webp'};
+
+        // remove any existing overlay
+        const existing = document.getElementById('voyanteOverlay');
+        if (existing) existing.remove();
+
+        const ov = document.createElement('div');
+        ov.id = 'voyanteOverlay';
+        ov.style.position = 'fixed';
+        ov.style.left = '0';
+        ov.style.top = '0';
+        ov.style.right = '0';
+        ov.style.bottom = '0';
+        ov.style.zIndex = 9999;
+        ov.style.display = 'flex';
+        ov.style.alignItems = 'center';
+        ov.style.justifyContent = 'center';
+        ov.style.background = 'rgba(14,23,39,0.99)';
+        ov.style.padding = '20px';
+
+        const card = document.createElement('div');
+        card.style.background = '#fff';
+        card.style.borderRadius = '12px';
+        card.style.padding = '18px';
+        card.style.maxWidth = '420px';
+        card.style.width = '100%';
+        card.style.textAlign = 'center';
+        card.style.boxShadow = '0 8px 30px rgba(0,0,0,0.6)';
+        card.innerHTML = `
+            <div style="font-size:14px;color:#666;margin-bottom:8px">Voyante — carte de ${escapeHtml(player.name)}</div>
+            <img src="${roleObj.img}" alt="${escapeHtml(roleObj.name)}" style="max-width:320px;width:80%;height:auto;border-radius:8px;display:block;margin:0 auto 12px" />
+            <div style="font-size:20px;font-weight:700;color:#222;margin-bottom:6px">${escapeHtml(roleObj.name)}</div>
+            <div style="font-size:13px;color:#444;margin-bottom:12px">${escapeHtml(player.name)}</div>
+            <button class="voyante-close" style="padding:10px 16px;border-radius:8px;border:none;background:#2d8cf0;color:#fff;font-weight:600;cursor:pointer">OK</button>
+        `;
+        ov.appendChild(card);
+        document.body.appendChild(ov);
+
+        // temporarily block clicks to avoid click-through
+        try { game.clickLock = true; setTimeout(() => { if (game) game.clickLock = false; }, 350); } catch (e) {}
+
+        const btn = ov.querySelector('.voyante-close');
+        if (btn) btn.addEventListener('click', () => {
+            try { traceLog('Voyante.overlay.close', {playerId: player.id, role: player.role}); } catch (e) {}
+            try { ov.remove(); } catch (e) {}
+            try {
+                finishNightAction('Voyante');
+            } catch (err) {
+                game.voyanteDone = true;
+                game.awaitingVoyante = false;
+            }
+        });
+    } catch (e) {
+        console.warn('showLargePlayerCard error', e);
     }
 }
 
@@ -626,7 +704,7 @@ function renderPlayerList() {
         li.addEventListener('click', (ev) => {
             // if Cupidon selection is active, clicks in the list should not remove players
             if (game && game.awaitingCupidon) {
-                showToast('Sélection Cupidon active — cliquez dans le cercle pour choisir les joueurs.', 'info');
+                showToast('Sélection Cupidon active — cliquez 2 joueurs dans le cercle pour former un couple.', 'info');
                 return;
             }
             // ignore clicks starting from the handle (drag)
@@ -737,6 +815,10 @@ function distributeRoles() {
     game.awaitingDetective = false;
     game.detectiveSelections = [];
     game.detectivePlayerId = null;
+    // clear Voyante state
+    game.voyanteDone = false;
+    game.awaitingVoyante = false;
+    game.voyanteSelection = null;
 
     // assign
     players.forEach((p, idx) => {
@@ -854,9 +936,16 @@ function startNight() {
     if (isRoleInGame('Détective')) {
         game.pendingNightActions.push('Detective');
     }
+    // Voyante joue toutes les nuits s'il est présent
+    if (isRoleInGame('Voyante')) {
+        game.pendingNightActions.push('Voyante');
+    }
     // TODO: push other night actions here based on roles present (Loups, Voyante, Salvateur...)
 
     updateCalendarDisplay();
+
+    // trace pending actions
+    try { traceLog('startNight.pendingActions', {night: game.night, pending: game.pendingNightActions}); } catch (e) {}
 
     // start first night action if present
     if (game.pendingNightActions.length > 0) {
@@ -902,16 +991,62 @@ function startNight() {
                 showToast('Sélection Salvateur active — cliquez sur un joueur dans le cercle', 'info', 6000);
                 renderPlayerCircle();
             }
+        } else if (next === 'Voyante') {
+            // interactive: Voyante choisit un joueur pour voir son rôle
+            if (!isRoleInGame('Voyante')) {
+                finishNightAction('Voyante');
+            } else {
+                game.awaitingVoyante = true;
+                game.voyanteSelection = null;
+                if (cur) cur.textContent = "Voyante : cliquez sur un joueur pour voir son rôle (le rôle sera révélé au MJ)";
+                showToast('Sélection Voyante active — cliquez sur un joueur dans le cercle', 'info', 6000);
+                renderPlayerCircle();
+            }
         } else {
             // nothing to do, wake immediately
             const cur = document.getElementById('currentAction');
-            if (cur) cur.textContent = 'Le village se réveille';
-            game.readyToWake = true;
+            if (next === 'Cupidon') {
+                game.awaitingCupidon = true;
+                if (cur) cur.textContent = "Cupidon : sélectionnez 2 joueurs pour former un couple (cliquez sur leurs noms dans le cercle)";
+                renderPlayerCircle();
+            } else if (next === 'EnfantSauvage') {
+                game.awaitingEnfantSauvage = true;
+                if (cur) cur.textContent = "Enfant Sauvage : sélectionnez un modèle (cliquez sur un joueur dans le cercle, l'Enfant ne peut pas se choisir lui-même)";
+                renderPlayerCircle();
+            } else if (next === 'Soeurs') {
+                // Do not auto-run recognition here. Wait for the MJ to press "prochaine action".
+                game.awaitingSoeurs = true;
+                if (cur) cur.textContent = "Soeurs : reconnaissance (appuyez sur Prochaine action pour appeler les Soeurs)";
+                // show circle so the MJ sees players (no automatic action)
+                renderPlayerCircle();
+            } else if (next === 'Salvateur') {
+                game.awaitingSalvateur = true;
+                if (cur) cur.textContent = "Salvateur : sélectionnez un joueur à protéger cette nuit (peut se protéger lui-même, pas la même personne deux nuits de suite)";
+                renderPlayerCircle();
+            } else if (next === 'Detective') {
+                // interactive: Détective choisit deux joueurs à comparer
+                game.awaitingDetective = true;
+                game.detectiveSelections = [];
+                if (cur) cur.textContent = "Détective : comparez le camp de 2 joueurs (cliquez sur deux joueurs dans le cercle)";
+                renderPlayerCircle();
+            } else if (next === 'Voyante') {
+                // interactive: Voyante choisit un joueur pour voir son rôle
+                game.awaitingVoyante = true;
+                game.voyanteSelection = null;
+                if (cur) cur.textContent = "Voyante : cliquez sur un joueur pour voir son rôle (le rôle sera révélé au MJ)";
+                renderPlayerCircle();
+            }
         }
     }
 }
 
 function finishNightAction(actionId) {
+    // short click lock to prevent immediate click-through from the previous action
+    try { game.clickLock = true; setTimeout(() => { if (game) game.clickLock = false; }, 350); } catch (e) {}
+
+    // trace start of finish
+    try { traceLog('finishNightAction.start', {actionId: actionId, pendingBefore: (Array.isArray(game.pendingNightActions)? [...game.pendingNightActions] : game.pendingNightActions), clickLock: !!game.clickLock, justFinishedAction: game.justFinishedAction || null}); } catch (e) {}
+
     if (actionId === 'Cupidon') {
         game.cupidonDone = true;
         game.awaitingCupidon = false;
@@ -933,6 +1068,11 @@ function finishNightAction(actionId) {
         game.awaitingDetective = false;
         game.detectivePlayerId = null;
     }
+    if (actionId === 'Voyante') {
+        game.voyanteDone = true;
+        game.awaitingVoyante = false;
+        game.voyanteSelection = null;
+    }
     if (Array.isArray(game.pendingNightActions)) {
         const idx = game.pendingNightActions.indexOf(actionId);
         if (idx !== -1) game.pendingNightActions.splice(idx, 1);
@@ -941,6 +1081,8 @@ function finishNightAction(actionId) {
     // proceed to next action or prepare wake
     if (game.pendingNightActions && game.pendingNightActions.length > 0) {
         const next = game.pendingNightActions[0];
+        // trace the next action
+        try { traceLog('finishNightAction.next', {next: next, pendingAfter: [...game.pendingNightActions]}); } catch (e) {}
         const cur = document.getElementById('currentAction');
         if (next === 'Cupidon') {
             game.awaitingCupidon = true;
@@ -966,6 +1108,12 @@ function finishNightAction(actionId) {
             game.detectiveSelections = [];
             if (cur) cur.textContent = "Détective : comparez le camp de 2 joueurs (cliquez sur deux joueurs dans le cercle)";
             renderPlayerCircle();
+        } else if (next === 'Voyante') {
+            // interactive: Voyante choisit un joueur pour voir son rôle
+            game.awaitingVoyante = true;
+            game.voyanteSelection = null;
+            if (cur) cur.textContent = "Voyante : cliquez sur un joueur pour voir son rôle (le rôle sera révélé au MJ)";
+            renderPlayerCircle();
         }
     } else {
         const cur = document.getElementById('currentAction');
@@ -979,6 +1127,11 @@ function finishNightAction(actionId) {
 // --- Couple management (Cupidon) ---
 // replace in-circle finalization to call finishNightAction('Cupidon')
 function renderPlayerCircle() {
+    // clean any residual visual selections before re-rendering
+    try { clearActionSelections(); } catch (e) {}
+
+    try { traceLog('renderPlayerCircle.start', {night: game.night, awaitingCupidon: !!game.awaitingCupidon, awaitingEnfantSauvage: !!game.awaitingEnfantSauvage, awaitingSalvateur: !!game.awaitingSalvateur, awaitingDetective: !!game.awaitingDetective, awaitingVoyante: !!game.awaitingVoyante, pending: Array.isArray(game.pendingNightActions)? [...game.pendingNightActions] : game.pendingNightActions}); } catch (e) {}
+
     const container = document.getElementById('playerCircle');
     if (!container) return;
     container.innerHTML = '';
@@ -1011,6 +1164,23 @@ function renderPlayerCircle() {
 
         // If awaiting Cupidon selection, allow clicking players in the circle to select couple
         li.addEventListener('click', (ev) => {
+            // log every click attempt on circle with current state
+            try { traceLog('playerCircle.clickAttempt', {playerId: p.id, playerName: p.name, night: game.night, awaitingCupidon: !!game.awaitingCupidon, awaitingEnfantSauvage: !!game.awaitingEnfantSauvage, awaitingSalvateur: !!game.awaitingSalvateur, awaitingDetective: !!game.awaitingDetective, awaitingVoyante: !!game.awaitingVoyante, clickLock: !!game.clickLock, justFinishedAction: game.justFinishedAction || null}); } catch(e) {}
+
+            // global click guard: ignore clicks while temporary clickLock is active
+            if (game && game.clickLock) {
+                ev.stopPropagation(); ev.preventDefault();
+                try { traceLog('playerCircle.clickBlocked', {reason: 'clickLock', playerId: p.id}); } catch (e) {}
+                return;
+            }
+            // consume a residual click that comes immediately after Salvateur selection
+            if (game && game.justFinishedAction === 'Salvateur') {
+                game.justFinishedAction = null;
+                ev.stopPropagation(); ev.preventDefault();
+                try { traceLog('playerCircle.clickConsumed', {reason: 'justFinishedAction==Salvateur', playerId: p.id}); } catch (e) {}
+                showToast('Clic ignoré (résidu de la sélection du Salvateur). Re-sélectionnez.', 'info');
+                return;
+            }
             // Cupidon flow
             if (game && game.awaitingCupidon) {
                 ev.stopPropagation();
@@ -1116,8 +1286,12 @@ function renderPlayerCircle() {
 
             // Salvateur flow
             if (game && game.awaitingSalvateur) {
+                // consume and neutralize the click immediately to avoid it falling through to the next action
+                try { ev.stopImmediatePropagation && ev.stopImmediatePropagation(); } catch (e) {}
                 ev.stopPropagation();
                 ev.preventDefault();
+                try { traceLog('Salvateur.selection.start', {playerId: p.id, playerName: p.name, clickLock: !!game.clickLock}); } catch (e) {}
+
                 // Find the Salvateur player (must exist)
                 const salv = players.find(pl => pl.role === 'Salvateur');
                 if (!salv) {
@@ -1135,13 +1309,37 @@ function renderPlayerCircle() {
                 p.protectedBySalvateur = true;
                 p.protectedUntilNight = game.night;
                 game.salvateurLastProtected = p.id;
-                // finalize
+                // set a short click lock to prevent the same physical click falling through to next action
+                try { game.clickLock = true; setTimeout(() => { if (game) game.clickLock = false; }, 350); } catch (e) {}
+
+                // mark that Salvateur just finished BEFORE calling finishNightAction so any subsequent immediate click can be detected
+                try { game.justFinishedAction = 'Salvateur'; } catch (e) {}
+                try { traceLog('Salvateur.justFinishedSet', {justFinishedAction: game.justFinishedAction}); } catch (e) {}
+
+                // finalize asynchronously so the current click event completes and cannot fall through to next action
                 try {
-                    finishNightAction('Salvateur');
-                } catch (e) {
-                    game.salvateurDone = true;
+                    setTimeout(() => {
+                        try {
+                            finishNightAction('Salvateur');
+                        } catch (e) {
+                            try { game.salvateurDone = true; game.awaitingSalvateur = false; } catch (err) {}
+                        }
+                    }, 8);
+                } catch (e) {}
+                 // clear the justFinishedAction shortly after to allow future clicks
+                 try { setTimeout(() => { if (game && game.justFinishedAction === 'Salvateur') game.justFinishedAction = null; }, 450); } catch (e) {}
+
+                // Defensive cleanup: ensure no lingering selections/classes remain which could block the next action
+                try {
                     game.awaitingSalvateur = false;
-                }
+                    game.detectiveSelections = [];
+                    game.cupidonSelections = [];
+                    game.voyanteSelection = null;
+                    // clear any visual selection classes left on DOM
+                    clearActionSelections();
+                    try { traceLog('Salvateur.selection.finishedCleanup', {playerId: p.id}); } catch (e) {}
+                } catch (e) {}
+
                 showToast(`Salvateur : ${p.name} est protégé cette nuit.`, 'success');
                 renderPlayerList();
                 renderPlayerCircle();
@@ -1244,6 +1442,35 @@ function renderPlayerCircle() {
                 // selection handled; exit handler
             }
 
+            // Voyante flow
+            if (game && game.awaitingVoyante) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                // determine voyante id (use stored id if present)
+                const voyanteId = players.find(pl => pl.role === 'Voyante')?.id;
+                // ensure there is a Voyante in the game
+                if (!voyanteId) {
+                    showToast('Aucune Voyante présente.', 'error');
+                    finishNightAction('Voyante');
+                    return;
+                }
+                // Prevent selecting the Voyante themself
+                if (p.id === voyanteId) {
+                    showToast('La Voyante ne peut pas tester son propre rôle.', 'error');
+                    return;
+                }
+
+                game.voyanteSelection = p.id;
+                li.classList.add('selected-for-voyante');
+
+                // show the large player card overlay; Voyante must see the actual role (not informer view)
+                try { traceLog('Voyante.selection', {playerId: p.id, playerName: p.name, role: p.role}); } catch (e) {}
+                showLargePlayerCard(p);
+
+                // selection handled; exit handler
+                return;
+            }
+
         });
 
     });
@@ -1263,17 +1490,11 @@ function renderPlayerCircle() {
 // --- Game controls (minimal placeholders) ---
 const game = {
     running: false, night: 0, cupidonDone: false, awaitingCupidon: false, cupidonSelections: [], // Enfant Sauvage flags
-    enfantSauvageDone: false, awaitingEnfantSauvage: false, enfantSauvageSelection: null
+    enfantSauvageDone: false, awaitingEnfantSauvage: false, enfantSauvageSelection: null,
+    salvateurDone: false, awaitingSalvateur: false, salvateurLastProtected: null,
+    detectiveDone: false, awaitingDetective: false, detectiveSelections: [], detectivePlayerId: null,
+    voyanteDone: false, awaitingVoyante: false, voyanteSelection: null
 };
-// add salvateur flags to game (initialized when distributing roles)
-try {
-    if (typeof game !== 'undefined') {
-        game.salvateurDone = game.salvateurDone || false;
-        game.awaitingSalvateur = game.awaitingSalvateur || false;
-        game.salvateurLastProtected = game.salvateurLastProtected || null;
-    }
-} catch (e) {
-}
 
 function startGame() {
     if (players.length === 0) {
@@ -1301,6 +1522,7 @@ function resetGame() {
 function advanceAction() {
     const cur = document.getElementById('currentAction');
     if (!cur) return;
+    try { traceLog('advanceAction.invoked', {phase: game.phase, sleeping: !!game.sleeping, awaitingCupidon: !!game.awaitingCupidon, awaitingSalvateur: !!game.awaitingSalvateur, awaitingDetective: !!game.awaitingDetective, awaitingVoyante: !!game.awaitingVoyante}); } catch (e) {}
 
     // If we are in day phase
     if (game.phase === 'day') {
@@ -1331,6 +1553,10 @@ function advanceAction() {
         }
         if (game.awaitingSalvateur) {
             showToast('Sélection Salvateur active — terminez-la avant de continuer.', 'info');
+            return;
+        }
+        if (game.awaitingVoyante) {
+            showToast('Sélection Voyante active — terminez-la avant de continuer.', 'info');
             return;
         }
         // If awaiting Soeurs recognition, the MJ pressing Prochaine action must trigger it now

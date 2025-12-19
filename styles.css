@@ -8,7 +8,7 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
-body{background:linear-gradient(180deg,#071226 0%, #081425 100%);color:var(--text);display:flex;flex-direction:column}
+body{background:linear-gradient(130deg, #0e1727 0%, #192e4b 100%);color:var(--text);display:flex;flex-direction:column}
 header{padding:10px 12px;display:flex;align-items:center;gap:10px}
 header h1{margin:0;font-size:18px}
 .subtitle{margin:2px 0 0;color:var(--muted);font-size:12px}
