@@ -231,8 +231,7 @@ const availableRoles = [
     {id: 'Chien-Loup', name: 'Chien-Loup', img: 'images/Chien-Loup.webp', camp: 'Loup', count: 0},
     {id: 'Citoyen', name: 'Citoyen', img: 'images/Citoyen.webp', camp: 'Village', count: 0},
     {id: 'Cupidon', name: 'Cupidon', img: 'images/Cupidon.webp', camp: 'Village', count: 0},
-    //Ne peut pas être implémenter donc temporairement désactivé
-    //{id: 'Détective', name: 'Détective', img: 'images/Détective.webp', camp: 'Village', count: 0},
+    {id: 'Détective', name: 'Détective', img: 'images/Détective.webp', camp: 'Village', count: 0},
     {id: 'Enfant Sauvage', name: 'Enfant Sauvage', img: 'images/Enfant Sauvage.webp', camp: 'Village', count: 0},
     {id: 'Idiot Du Village', name: 'Idiot Du Village', img: 'images/Idiot Du Village.webp', camp: 'Village', count: 0},
     {
@@ -992,16 +991,13 @@ function startNight() {
                 renderPlayerCircle();
             }
         } else if (next === 'Voyante') {
+            // defensive cleanup: ensure no lingering detective selections/classes remain
+            try { game.detectiveSelections = []; game.voyanteSelection = null; clearActionSelections(); } catch (e) {}
             // interactive: Voyante choisit un joueur pour voir son rôle
-            if (!isRoleInGame('Voyante')) {
-                finishNightAction('Voyante');
-            } else {
-                game.awaitingVoyante = true;
-                game.voyanteSelection = null;
-                if (cur) cur.textContent = "Voyante : cliquez sur un joueur pour voir son rôle (le rôle sera révélé au MJ)";
-                showToast('Sélection Voyante active — cliquez sur un joueur dans le cercle', 'info', 6000);
-                renderPlayerCircle();
-            }
+            game.awaitingVoyante = true;
+            game.voyanteSelection = null;
+            if (cur) cur.textContent = "Voyante : cliquez sur un joueur pour voir son rôle (le rôle sera révélé au MJ)";
+            renderPlayerCircle();
         } else {
             // nothing to do, wake immediately
             const cur = document.getElementById('currentAction');
@@ -1067,6 +1063,18 @@ function finishNightAction(actionId) {
         game.detectiveDone = true;
         game.awaitingDetective = false;
         game.detectivePlayerId = null;
+        // defensive cleanup: ensure no lingering selections or classes remain which could leak into Voyante
+        try {
+            game.detectiveSelections = [];
+            // prevent immediate click-through to the next action (e.g., Voyante)
+            try { game.clickLock = true; } catch (e) {}
+            try { game.justFinishedAction = 'Detective'; } catch (e) {}
+            setTimeout(() => { try { if (game) game.clickLock = false; } catch (e) {} }, 350);
+            setTimeout(() => { try { if (game && game.justFinishedAction === 'Detective') game.justFinishedAction = null; } catch (e) {} }, 450);
+            // remove visual selection classes from DOM
+            try { clearActionSelections(); } catch (e) {}
+            try { traceLog && traceLog('finishNightAction.detectiveCleanup', {}); } catch (e) {}
+        } catch (e) {}
     }
     if (actionId === 'Voyante') {
         game.voyanteDone = true;
@@ -1109,6 +1117,8 @@ function finishNightAction(actionId) {
             if (cur) cur.textContent = "Détective : comparez le camp de 2 joueurs (cliquez sur deux joueurs dans le cercle)";
             renderPlayerCircle();
         } else if (next === 'Voyante') {
+            // defensive cleanup: ensure no lingering detective selections/classes remain
+            try { game.detectiveSelections = []; game.voyanteSelection = null; clearActionSelections(); } catch (e) {}
             // interactive: Voyante choisit un joueur pour voir son rôle
             game.awaitingVoyante = true;
             game.voyanteSelection = null;
@@ -1174,11 +1184,12 @@ function renderPlayerCircle() {
                 return;
             }
             // consume a residual click that comes immediately after Salvateur selection
-            if (game && game.justFinishedAction === 'Salvateur') {
+            if (game && (game.justFinishedAction === 'Salvateur' || game.justFinishedAction === 'Detective')) {
+                const prev = game.justFinishedAction;
                 game.justFinishedAction = null;
                 ev.stopPropagation(); ev.preventDefault();
-                try { traceLog('playerCircle.clickConsumed', {reason: 'justFinishedAction==Salvateur', playerId: p.id}); } catch (e) {}
-                showToast('Clic ignoré (résidu de la sélection du Salvateur). Re-sélectionnez.', 'info');
+                try { traceLog('playerCircle.clickConsumed', {reason: `justFinishedAction==${prev}`, playerId: p.id}); } catch (e) {}
+                showToast('Clic ignoré (résidu de la sélection précédente). Re-sélectionnez.', 'info');
                 return;
             }
             // Cupidon flow
@@ -1351,9 +1362,11 @@ function renderPlayerCircle() {
                 ev.preventDefault();
                 // determine detective id (use stored id if present)
                 const detId = game.detectivePlayerId || (players.find(pl => pl.role === 'Détective') || {}).id;
+                try { traceLog('Detective.selection.attempt', {clickedPlayerId: p.id, clickedPlayerName: p.name, detectiveId: detId, night: game.night, pending: Array.isArray(game.pendingNightActions)? [...game.pendingNightActions] : game.pendingNightActions}); } catch (e) {}
                 // ensure there is a Detective in the game
                 if (!detId) {
                     showToast('Aucun Détective présent.', 'error');
+                    try { traceLog('Detective.selection.noDetective', {}); } catch (e) {}
                     finishNightAction('Detective');
                     return;
                 }
@@ -1362,6 +1375,7 @@ function renderPlayerCircle() {
                     showToast('Le Détective ne peut pas être testé. Choisissez deux autres joueurs.', 'error');
                     // visually mark the detective as non-selectable
                     li.classList.add('detective-unselectable');
+                    try { traceLog('Detective.selection.blockedSelf', {playerId: p.id, playerName: p.name}); } catch (e) {}
                     return;
                 }
 
@@ -1371,10 +1385,12 @@ function renderPlayerCircle() {
                 if (idx !== -1) {
                     game.detectiveSelections.splice(idx, 1);
                     li.classList.remove('selected-for-detective');
+                    try { traceLog('Detective.selection.removed', {playerId: p.id, remaining: [...game.detectiveSelections]}); } catch (e) {}
                     return;
                 }
                 if (game.detectiveSelections.length >= 2) {
                     showToast('Vous avez déjà sélectionné 2 joueurs.', 'info');
+                    try { traceLog('Detective.selection.tooMany', {selections: [...game.detectiveSelections]}); } catch (e) {}
                     return;
                 }
                 // Prevent selecting the same player twice (defensive)
@@ -1385,6 +1401,7 @@ function renderPlayerCircle() {
                 // push selection
                 game.detectiveSelections.push(p.id);
                 li.classList.add('selected-for-detective');
+                try { traceLog('Detective.selection.added', {playerId: p.id, selections: [...game.detectiveSelections]}); } catch (e) {}
 
                 // If only one other non-detective player exists, warn
                 const nonDetCount = players.filter(x => x.id !== detId).length;
@@ -1392,6 +1409,7 @@ function renderPlayerCircle() {
                     showToast('Impossible : pas assez de joueurs non-Détective à comparer.', 'error');
                     game.detectiveSelections = [];
                     renderPlayerCircle();
+                    try { traceLog('Detective.selection.notEnoughPlayers', {nonDetCount}); } catch (e) {}
                     return;
                 }
 
@@ -1401,6 +1419,7 @@ function renderPlayerCircle() {
                         showToast('Sélection invalide : choisissez deux joueurs distincts.', 'error');
                         game.detectiveSelections = [];
                         renderPlayerCircle();
+                        try { traceLog('Detective.selection.samePlayer', {}); } catch (e) {}
                         return;
                     }
                     const pa = players.find(x => x.id === idA);
@@ -1409,6 +1428,7 @@ function renderPlayerCircle() {
                         showToast('Sélection invalide', 'error');
                         game.detectiveSelections = [];
                         renderPlayerCircle();
+                        try { traceLog('Detective.selection.invalidPlayers', {idA, idB}); } catch (e) {}
                         return;
                     }
                     // Safety: ensure neither selected player is the Detective
@@ -1416,6 +1436,7 @@ function renderPlayerCircle() {
                         showToast('Le Détective ne peut pas être testé. Choisissez deux joueurs différents du Détective.', 'error');
                         game.detectiveSelections = [];
                         renderPlayerCircle();
+                        try { traceLog('Detective.selection.includedDetective', {detId, pa: pa.id, pb: pb.id}); } catch (e) {}
                         return;
                     }
                     // determine detective view camps
@@ -1423,6 +1444,7 @@ function renderPlayerCircle() {
                     const campB = getDetectiveViewOfPlayer(pb);
                     // Normalize camps to main categories: 'Village', 'Loup', 'Solitaire' (null -> unknown)
                     const same = (campA && campB && campA === campB);
+                    try { traceLog('Detective.selection.result', {playerA: {id: pa.id, name: pa.name, camp: campA}, playerB: {id: pb.id, name: pb.name, camp: campB}, same}); } catch (e) {}
                     if (same) {
                         showToast(`Détective : mêmes camps (${campA}) 👍`, 'success', 5000);
                     } else {
